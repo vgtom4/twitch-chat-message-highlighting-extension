@@ -12,3 +12,20 @@
 /* .chat-line__message:has(button[data-a-target="chat-badge"] img[alt="Diffuseur"]) {
     background-color: #00643a !important;
 } */
+
+.button-highlight-action {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 10px;
+    z-index: 1000;
+}
+
+.button-highlight-action-remove {
+    background-color: #ff0000;
+}
+
+.button-highlight-action-add {
+    background-color: #6441a5;
+}

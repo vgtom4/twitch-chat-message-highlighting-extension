@@ -31,6 +31,62 @@ function applyStylesToTab(twitchUsersHighlighter) {
                     style.id = "twitchUsersHighlighter";
                     style.textContent = manualHighlight + "\n" + userTypesHighlight;
                     document.head.appendChild(style);
+                    
+                    // Add mouseover listener for user message line
+                    const eventId = 'unique-mouseover-listener';
+                    if (!document.documentElement.hasAttribute(`data-event-id-${eventId}`)) {
+                        let lastUser = null;
+                        document.addEventListener('mouseover', (event) => {
+                            const target = event.target.closest('.chat-line__message');
+                            if (target) {
+                                const currentUser = target.getAttribute('data-a-user');
+                                if (currentUser && currentUser !== lastUser) {
+                                    console.log('Current user:', currentUser);
+                                    
+                                    lastUser = currentUser;
+
+                                    // Delete button all previous buttons
+                                    const buttons = document.querySelectorAll('.button-highlight-action');
+                                    buttons.forEach((button) => {
+                                        button.remove();
+                                    });
+
+                                    chrome.storage.local.get('twitchUsersHighlighter', (result) => {
+                                        const cachedData = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], user_types: [] };
+
+                                        // Create a new button
+                                        const button = document.createElement('button');
+                                        button.title = cachedData.whitelisted.includes(currentUser) ? 'Remove from whitelist' : 'Add to whitelist';
+                                        button.textContent = cachedData.whitelisted.includes(currentUser) ? '-' : '+';
+                                        button.className = 'button-highlight-action';
+                                        button.classList.add(cachedData.whitelisted.includes(currentUser) ? 'button-highlight-action-remove' : 'button-highlight-action-add');
+                                        button.onclick = (e) => {
+                                            if (cachedData.whitelisted.includes(currentUser)) {
+                                                cachedData.whitelisted = cachedData.whitelisted.filter(user => user !== currentUser);
+                                            } else {
+                                                cachedData.whitelisted.push(currentUser);
+                                            }
+                                            chrome.storage.local.set({ 'twitchUsersHighlighter': cachedData });
+                                            chrome.runtime.sendMessage({
+                                                action: "applyStyles",
+                                                twitchUsersHighlighter: cachedData
+                                            });
+                                            e.target.title = cachedData.whitelisted.includes(currentUser) ? 'Remove from whitelist' : 'Add to whitelist';
+                                            e.target.textContent = cachedData.whitelisted.includes(currentUser) ? '-' : '+';
+                                            e.target.className = 'button-highlight-action';
+                                            e.target.classList.add(cachedData.whitelisted.includes(currentUser) ? 'button-highlight-action-remove' : 'button-highlight-action-add');
+                                        };
+
+                                        // Insert the button before the target element
+                                        target.style.position = 'relative';
+                                        target.insertBefore(button, target.firstChild);
+                                        lastButton = button;
+                                    });
+                                }
+                            }
+                        });
+                        document.documentElement.setAttribute(`data-event-id-${eventId}`, 'true');
+                    }
                 },
                 args: [manualHighlight, userTypesHighlight],
             });
