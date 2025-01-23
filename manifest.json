@@ -1,0 +1,26 @@
+{
+    "manifest_version": 3,
+    "name": "Twitch Chat Messages Highlighting",
+    "version": "0.1",
+    "description": "Highlight users messages on Twitch.",
+    "host_permissions": ["https://www.twitch.tv/*"],
+    "content_scripts": [
+      {
+        "matches": ["https://www.twitch.tv/*"],
+        "css": ["styles.css"]
+      }
+    ],
+    "action": {
+        "default_popup": "popup/popup.html"
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "permissions": [
+        "scripting",
+        "storage",
+        "activeTab"
+    ]
+  }
+  

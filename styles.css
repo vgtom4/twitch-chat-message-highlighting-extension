@@ -1,0 +1,14 @@
+/* Appliquer le fond bleu si le badge "Vérifié" est présent, mais pas le badge ["Diffuseur"] ni les utilisateurs ["fossabot", "streamelements"] */
+/* .chat-line__message:has(button[data-a-target="chat-badge"] img[alt="Vérifié"]):not([data-a-user="fossabot"]):not([data-a-user="dreamboum"]):not([data-a-user="streamelements"]):not(:has(button[data-a-target="chat-badge"] img[alt="Diffuseur"])) {
+    background-color: #4808fb !important;
+}
+
+.chat-line__message[data-a-user="xxstaz"],
+.chat-line__message[data-a-user="vgtom4"] {
+    background-color: #0c6bb8 !important;
+} */
+
+/* Appliquer le fond vert si le badge "Diffuseur" est présent (peu importe l'utilisateur) */
+/* .chat-line__message:has(button[data-a-target="chat-badge"] img[alt="Diffuseur"]) {
+    background-color: #00643a !important;
+} */

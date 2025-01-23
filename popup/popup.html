@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Highlighter Messages</title>
+    <link rel="stylesheet" href="bulma.min.css" />
+</head>
+<body>
+    <div class="container m-3">
+
+        <div class="field">
+            <label class="label">Add new user to highlight</label>
+            <div class="control" style="display: flex; justify-content: space-between;">
+                <input type="text" class="input" id="newUsername">
+                <select class="input" id="highlightType">
+                    <option value="whitelisted" selected>Whitelist</option>
+                    <option value="blacklisted">Blacklist</option>
+                </select>
+                <button class="button is-primary" id="addUserButton">Add</button>
+            </div>
+            <p id="new-username-error" class="help is-danger" style="display: none;">Please enter a valid username</p>
+        </div>
+
+        <style>
+            .checkbox-container-user-types {
+                display: flex;
+                flex-direction: column;
+                margin-bottom: 1rem;
+                width: fit-content;
+                max-width: 100%;
+            }
+
+            .checkbox-container-user-types-item {
+                display: inline-flex;
+                justify-content: space-between;
+                gap: 0.5rem;
+                width: 100%;
+            }
+
+            .checkbox-container-user-types-item > label {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .checkbox-container-user-types-item > label > span {
+                user-select: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+            }
+            
+            .checkbox-container-user-types-item *,
+            .listElement summary {
+                cursor: pointer;
+            }
+
+            .listElement {
+                border: 1px solid;
+                padding: 1rem;
+            }
+
+            .user-list-item > button {
+                opacity: 0;
+            }
+
+            .user-list-item:hover > button {
+                opacity: 1;
+            }
+        </style>
+
+        <!-- checkbox pour activer l'highlight des messages verifiés -->
+        <div class="checkbox-container-user-types" id="highlightCheckboxes">
+        </div>
+
+        <!-- whitelister user list (username + ["switch to blacklist"] + delete button)-->
+        <details id="whitelisterUserListDetails" class="listElement">
+            <summary style="font-weight: bold;"><span id="whitelisterUserListCount"></span> Whitelisted users</summary>
+            <div class="control" id="whitelisterUserList"></div>
+        </details>
+
+        <!-- blacklisted user list (username + ["switch to whitelist"] + delete button)-->
+        <details id="blacklistedUserListDetails" class="listElement">
+            <summary style="font-weight: bold;"><span id="blacklistedUserListCount"></span> Blacklisted users</summary>
+            <div class="control" id="blacklistedUserList"></div>
+        </details>
+
+    </div>
+    
+</body>
+
+<script src="popup.js"></script>
+
+</html>
