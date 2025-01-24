@@ -15,7 +15,7 @@ function applyStylesToTab(twitchUsersHighlighter) {
         .filter((userBadge) => userBadge.isEnabled)
         .map(
             (userBadge) =>
-                `.chat-line__message:has(button[data-a-target="chat-badge"] img[alt="${userBadge.label}"])${twitchUsersHighlighter.blacklisted.map((user) => `:not([data-a-user="${user}"])`).join('')}{ background-color: ${userBadge.color} !important; }`
+                `.chat-line__message:has(button[data-a-target="chat-badge"] img[alt*="${userBadge.label}"])${twitchUsersHighlighter.blacklisted.map((user) => `:not([data-a-user="${user}"])`).join('')}{ background-color: ${userBadge.color} !important; }`
         )
         .join("\n");
 
