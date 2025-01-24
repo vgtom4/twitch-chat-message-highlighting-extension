@@ -11,11 +11,11 @@ function applyStylesToTab(twitchUsersHighlighter) {
         )
         .join("\n");
     
-    const userTypesHighlight = twitchUsersHighlighter.user_types
-        .filter((userType) => userType.isEnabled)
+    const userTypesHighlight = twitchUsersHighlighter.highlightedBadges
+        .filter((userBadge) => userBadge.isEnabled)
         .map(
-            (userType) =>
-                `.chat-line__message:has(button[data-a-target="chat-badge"] img[alt="${userType.label}"])${twitchUsersHighlighter.blacklisted.map((user) => `:not([data-a-user="${user}"])`).join('')}{ background-color: ${userType.color} !important; }`
+            (userBadge) =>
+                `.chat-line__message:has(button[data-a-target="chat-badge"] img[alt="${userBadge.label}"])${twitchUsersHighlighter.blacklisted.map((user) => `:not([data-a-user="${user}"])`).join('')}{ background-color: ${userBadge.color} !important; }`
         )
         .join("\n");
 
@@ -52,10 +52,9 @@ function applyStylesToTab(twitchUsersHighlighter) {
                                     });
 
                                     chrome.storage.local.get('twitchUsersHighlighter', (result) => {
-                                        const cachedData = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], user_types: [] };
+                                        const cachedData = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], highlightedBadges: [] };
 
-                                        // const userChatMessageLineHasBadgeType = userChatMessageLine.querySelector(cachedData.user_types.map((userType) => `button[data-a-target="chat-badge"] img[alt="${userType.label}"]`).join(', ')) !== null;
-                                        const userChatMessageLineHasBadgeType = cachedData.user_types.some((badgeType) => {
+                                        const userChatMessageLineHasBadgeType = cachedData.highlightedBadges.some((badgeType) => {
                                             return badgeType.isEnabled && userChatMessageLine.querySelector(`button[data-a-target="chat-badge"] img[alt="${badgeType.label}"]`);
                                         });
 

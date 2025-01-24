@@ -19,7 +19,7 @@ const blacklistedUserListDetailsTitleCount = document.getElementById("blackliste
 const whitelisterUserList = document.getElementById("whitelisterUserList");
 const blacklistedUserList = document.getElementById("blacklistedUserList");
 
-let cachedUsers = { whitelisted: [], blacklisted: [], user_types: [{ type: 'diffuser', label: 'Diffuseur', color: '#00643a', isEnabled: true }, { type: 'verified', label: 'Vérifié', color: '#4808fb', isEnabled: true },] };
+let cachedUsers = { whitelisted: [], blacklisted: [], highlightedBadges: [{ type: 'diffuser', label: 'Diffuseur', color: '#00643a', isEnabled: true }, { type: 'verified', label: 'Vérifié', color: '#4808fb', isEnabled: true },] };
 
 // Hide/show helpers
 const hideElement = (elem) => (elem.style.display = "none");
@@ -94,7 +94,7 @@ newUsernameElement.onkeydown = (e) => {
 
 // Initialize cachedUsers and refresh UI
 chrome.storage.local.get(["twitchUsersHighlighter"], (result) => {
-	cachedUsers = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], user_types: [] };
+	cachedUsers = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], highlightedBadges: [] };
 	console.log(cachedUsers);
 	
 	if (!cachedUsers.whitelisted) {
@@ -103,24 +103,24 @@ chrome.storage.local.get(["twitchUsersHighlighter"], (result) => {
 	if (!cachedUsers.blacklisted) {
 		cachedUsers.blacklisted = [];
 	}
-	if (!cachedUsers.user_types) {
-        cachedUsers.user_types = [{ type: 'diffuser', label: 'Diffuseur', color: '#00643a', isEnabled: true }, { type: 'verified', label: 'Vérifié', color: '#4808fb', isEnabled: true }];
+	if (!cachedUsers.highlightedBadges) {
+        cachedUsers.highlightedBadges = [{ type: 'diffuser', label: 'Diffuseur', color: '#00643a', isEnabled: true }, { type: 'verified', label: 'Vérifié', color: '#4808fb', isEnabled: true }];
     }
 	refreshUsersList(cachedUsers);
 });
 
 // Refresh user lists
 function refreshUsersList(twitchUsersHighlighter) {
-	const { whitelisted, blacklisted, user_types } = twitchUsersHighlighter || { whitelisted: [], blacklisted: [], user_types: [] };
+	const { whitelisted, blacklisted, highlightedBadges } = twitchUsersHighlighter || { whitelisted: [], blacklisted: [], highlightedBadges: [] };
 
-	// User types
+	// User badges
 	highlightCheckboxes.innerHTML = "";
-	(user_types || []).forEach(({ type, label, color, isEnabled }) => {
+	(highlightedBadges || []).forEach(({ type, label, color, isEnabled }) => {
 		const checkbox = document.createElement("input");
 		checkbox.id = `checkbox_user_type_${type}`;
 		checkbox.type = "checkbox";
 		checkbox.checked = isEnabled;
-		checkbox.dataset.userType = type;
+		checkbox.dataset.userBadge = type;
 
 		const colorInput = document.createElement("input");
 		colorInput.type = "color";
@@ -129,12 +129,12 @@ function refreshUsersList(twitchUsersHighlighter) {
 		colorInput.addEventListener("change", (e) => {
 			const updatedUsers = {
 				...cachedUsers,
-				user_types: cachedUsers.user_types.map((user_type) => {
-					if (user_type.type === type) {
+				highlightedBadges: cachedUsers.highlightedBadges.map((userBadge) => {
+					if (userBadge.type === type) {
 						console.log(e.target.value);
-						return { ...user_type, color: e.target.value };
+						return { ...userBadge, color: e.target.value };
 					}
-					return user_type;
+					return userBadge;
 				}),
 			};
 			cachedUsers = updatedUsers;
@@ -229,11 +229,11 @@ highlightCheckboxes.addEventListener("change", (e) => {
 	const isEnabled = e.target.checked;
 	const updatedUsers = {
 		...cachedUsers,
-		user_types: cachedUsers.user_types.map((user_type) => {
-			if (user_type.type === e.target.dataset.userType) {
-				return { ...user_type, isEnabled };
+		highlightedBadges: cachedUsers.highlightedBadges.map((userBadge) => {
+			if (userBadge.type === e.target.dataset.userBadge) {
+				return { ...userBadge, isEnabled };
 			}
-			return user_type;
+			return userBadge;
 		}),
 	};
 	chrome.storage.local.set({ twitchUsersHighlighter: updatedUsers }, () => {
