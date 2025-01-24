@@ -54,6 +54,8 @@ function applyStylesToTab(twitchUsersHighlighter) {
                                     chrome.storage.local.get('twitchUsersHighlighter', (result) => {
                                         const cachedData = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], user_types: [] };
 
+                                        // TODO: Add gestion for user type highlight (ex: "add to blacklist" if user has a type)
+
                                         // Create a new button
                                         const button = document.createElement('button');
                                         button.title = cachedData.whitelisted.includes(currentUser) ? 'Remove from whitelist' : 'Add to whitelist';
@@ -65,6 +67,12 @@ function applyStylesToTab(twitchUsersHighlighter) {
                                                 cachedData.whitelisted = cachedData.whitelisted.filter(user => user !== currentUser);
                                             } else {
                                                 cachedData.whitelisted.push(currentUser);
+
+                                                // si l'utilisateur était déjà dans l'une des autres listes, le retirer
+                                                Object.keys(cachedData).filter((key) => key !== "whitelisted").forEach((key) => {
+                                                    cachedData[key] = cachedData[key].filter((user) => user !== currentUser);
+                                                })
+                                                cachedData.blacklisted = cachedData.blacklisted.filter((user) => user !== currentUser);
                                             }
                                             chrome.storage.local.set({ 'twitchUsersHighlighter': cachedData });
                                             chrome.runtime.sendMessage({
