@@ -55,7 +55,7 @@ function applyStylesToTab(twitchUsersHighlighter) {
                                         const cachedData = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], highlightedBadges: [] };
 
                                         const userChatMessageLineHasBadgeType = cachedData.highlightedBadges.some((badgeType) => {
-                                            return badgeType.isEnabled && userChatMessageLine.querySelector(`button[data-a-target="chat-badge"] img[alt="${badgeType.label}"]`);
+                                            return badgeType.isEnabled && userChatMessageLine.querySelector(`button[data-a-target="chat-badge"] img[alt*="${badgeType.label}"]`);
                                         });
 
                                         // Create a new button
