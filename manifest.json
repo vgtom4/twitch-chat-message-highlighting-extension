@@ -3,6 +3,11 @@
     "name": "Twitch Chat Messages Highlighting",
     "version": "0.1",
     "description": "Highlight users messages on Twitch.",
+    "icons": {
+      "16": "public/favicons/icon16.png",
+      "48": "public/favicons/icon48.png",
+      "128": "public/favicons/icon128.png"
+    },
     "host_permissions": ["https://www.twitch.tv/*"],
     "content_scripts": [
       {
