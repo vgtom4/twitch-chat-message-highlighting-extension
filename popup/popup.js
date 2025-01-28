@@ -199,7 +199,7 @@ function createUserListItem(type, username) {
 	span.textContent = username;
 
 	const button = document.createElement("button");
-	button.className = "button is-danger";
+	button.className = "remove-user-button";
 	button.textContent = "X";
 	button.addEventListener("click", () => removeUser(type, username));
 
