@@ -49,8 +49,7 @@
     let settings = { ...TCH.DEFAULT_SETTINGS };
     let badgeIndex = {};
     let badgeByKey = new Map();
-    let whiteSet = new Set();
-    let blackSet = new Set();
+    let userByLogin = new Map();
 
     let channel = TCH.SCOPE_UNKNOWN;
     let knownPath = "";
@@ -62,9 +61,10 @@
 
     function rebuildLookups() {
         badgeByKey = new Map(settings.badges.map((badge) => [badge.key, badge]));
-        whiteSet = new Set(settings.whitelisted);
-        blackSet = new Set(settings.blacklisted);
+        userByLogin = new Map(settings.users.map((user) => [user.login, user]));
     }
+
+    const hoverButtonAllowed = () => settings.enabled && settings.showHoverButton;
 
     // --- Chaîne courante -----------------------------------------------------
 
@@ -137,9 +137,9 @@
             scope,
             label,
             color: TCH.pickColor(settings.badges.length),
-            // Désactivé par défaut : découvrir un badge ne doit pas colorer le
+            // Inactif par défaut : découvrir un badge ne doit pas colorer le
             // chat sans que l'utilisateur l'ait demandé.
-            isEnabled: false,
+            mode: TCH.MODE.OFF,
         };
         settings.badges.push(entry);
         badgeByKey.set(entry.key, entry);
@@ -159,8 +159,9 @@
         if (existing && existing !== entry) {
             settings.badges = settings.badges.filter((badge) => badge !== entry);
             badgeByKey.delete(previousKey);
-            // Une activation d'un côté ou de l'autre vaut activation.
-            existing.isEnabled = existing.isEnabled || entry.isEnabled;
+            // Un réglage explicite d'un côté ou de l'autre est conservé ; en
+            // cas de désaccord, celui de la destination l'emporte.
+            if (existing.mode === TCH.MODE.OFF) existing.mode = entry.mode;
             winner = existing;
         } else {
             badgeByKey.delete(previousKey);
@@ -234,23 +235,19 @@
         return entry;
     }
 
-    // Couleur du premier badge actif de la ligne. On parcourt tous les badges
-    // même après avoir trouvé la couleur, pour alimenter le registre.
+    // Couleur dictée par les badges de la ligne. On parcourt tout même après
+    // avoir trouvé une couleur : pour alimenter le registre, et parce qu'un
+    // badge exclu rencontré plus loin annule la coloration.
     function badgeColorFor(line) {
         let color = null;
+        let excluded = false;
         for (const img of line.querySelectorAll(BADGE_IMG_SELECTOR)) {
             const entry = resolveBadge(img);
-            if (!color && entry && entry.isEnabled) color = entry.color;
+            if (!entry) continue;
+            if (entry.mode === TCH.MODE.BLACK) excluded = true;
+            else if (!color && entry.mode === TCH.MODE.WHITE) color = entry.color;
         }
-        return color;
-    }
-
-    function hasActiveBadge(line) {
-        for (const img of line.querySelectorAll(BADGE_IMG_SELECTOR)) {
-            const entry = resolveBadge(img);
-            if (entry && entry.isEnabled) return true;
-        }
-        return false;
+        return excluded ? null : color;
     }
 
     // --- Lignes de chat ------------------------------------------------------
@@ -265,12 +262,13 @@
         );
     }
 
+    // Une règle nominative l'emporte toujours sur une règle de badge : un
+    // utilisateur explicitement mis en avant le reste même s'il porte un badge
+    // exclu, et inversement.
     function colorFor(line) {
-        const login = getLogin(line);
-        if (login) {
-            if (blackSet.has(login)) return null;
-            if (whiteSet.has(login)) return settings.whitelistColor;
-        }
+        const user = userByLogin.get(getLogin(line));
+        if (user?.mode === TCH.MODE.BLACK) return null;
+        if (user?.mode === TCH.MODE.WHITE) return user.color || settings.defaultColor;
         return badgeColorFor(line);
     }
 
@@ -329,23 +327,30 @@
         hostLine = null;
     }
 
-    // Sur une ligne déjà colorée par un badge, l'action utile est d'exclure
-    // l'utilisateur (blacklist) ; sinon c'est de l'ajouter (whitelist).
+    // Déjà réglé sur cet utilisateur : le bouton le retire. Sinon il l'ajoute,
+    // en exclusion si la ligne est colorée par un badge (le geste utile est
+    // alors d'écarter cet utilisateur-là), en mise en avant dans les autres cas.
     function refreshButton() {
         if (!hostLine || !actionButton) return;
         const login = getLogin(hostLine);
         if (!login) return detachButton();
 
-        const list = hasActiveBadge(hostLine) ? "blacklisted" : "whitelisted";
-        const listed = settings[list].includes(login);
+        const existing = userByLogin.get(login);
+        const mode = existing
+            ? TCH.MODE.OFF
+            : badgeColorFor(hostLine)
+            ? TCH.MODE.BLACK
+            : TCH.MODE.WHITE;
 
-        actionButton.dataset.list = list;
+        actionButton.dataset.mode = mode;
         actionButton.dataset.login = login;
-        actionButton.textContent = listed ? "−" : "+";
-        actionButton.title = `${listed ? "Remove from" : "Add to"} ${
-            list === "blacklisted" ? "blacklist" : "whitelist"
-        } (${login})`;
-        actionButton.classList.toggle("tch-action-remove", listed);
+        actionButton.textContent = mode === TCH.MODE.OFF ? "−" : "+";
+        actionButton.title =
+            mode === TCH.MODE.OFF
+                ? `Remove ${login} from the list`
+                : `${mode === TCH.MODE.BLACK ? "Exclude" : "Highlight"} ${login}`;
+        actionButton.classList.toggle("tch-action-remove", mode === TCH.MODE.OFF);
+        actionButton.classList.toggle("tch-action-exclude", mode === TCH.MODE.BLACK);
     }
 
     function attachButton(line) {
@@ -364,16 +369,12 @@
         event.preventDefault();
         event.stopPropagation();
 
-        const { list, login } = actionButton.dataset;
-        if (!list || !login) return;
+        const { mode, login } = actionButton.dataset;
+        if (!mode || !login) return;
 
-        if (settings[list].includes(login)) {
-            settings[list] = settings[list].filter((user) => user !== login);
-        } else {
-            // Les deux listes sont exclusives.
-            settings.whitelisted = settings.whitelisted.filter((u) => u !== login);
-            settings.blacklisted = settings.blacklisted.filter((u) => u !== login);
-            settings[list] = [...settings[list], login];
+        settings.users = settings.users.filter((user) => user.login !== login);
+        if (mode !== TCH.MODE.OFF) {
+            settings.users = [...settings.users, TCH.makeUser(login, mode)];
         }
 
         rebuildLookups();
@@ -382,8 +383,12 @@
     }
 
     function onMouseOver(event) {
+        if (!hoverButtonAllowed()) return;
         const line = event.target.closest?.(LINE_SELECTOR);
+        // Survol du chat en dehors de toute ligne : le bouton n'a plus d'hôte
+        // pertinent, il disparaît au lieu de rester collé à la dernière ligne.
         if (line) attachButton(line);
+        else detachButton();
     }
 
     // --- Observation du chat -------------------------------------------------
@@ -418,10 +423,14 @@
 
         lineObserver?.disconnect();
         container?.removeEventListener("mouseover", onMouseOver);
+        container?.removeEventListener("mouseleave", detachButton);
         detachButton();
 
         container = found;
         container.addEventListener("mouseover", onMouseOver);
+        // La souris quitte le chat sans passer par une autre ligne : sans ça le
+        // bouton restait affiché sur la dernière ligne survolée.
+        container.addEventListener("mouseleave", detachButton);
         lineObserver = new MutationObserver(onMutations);
         lineObserver.observe(container, { childList: true, subtree: true });
         rescanAll();
@@ -456,10 +465,10 @@
     function onStorageChanged(changes, area) {
         if (area === "sync" && changes[TCH.SETTINGS_KEY]) {
             settings = { ...TCH.DEFAULT_SETTINGS, ...changes[TCH.SETTINGS_KEY].newValue };
-            settings.whitelisted = settings.whitelisted || [];
-            settings.blacklisted = settings.blacklisted || [];
+            settings.users = settings.users || [];
             settings.badges = settings.badges || [];
             rebuildLookups();
+            if (!hoverButtonAllowed()) detachButton();
             rescanAll();
         }
         if (area === "local" && changes[TCH.INDEX_KEY]) {

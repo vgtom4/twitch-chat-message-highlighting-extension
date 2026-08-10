@@ -11,61 +11,98 @@
 <body>
     <div class="container">
 
-        <label class="master-toggle">
-            <span>Highlighting enabled</span>
-            <input type="checkbox" id="enabledToggle">
-        </label>
+        <div class="toggles">
+            <label class="master-toggle">
+                <span>Extension enabled</span>
+                <input type="checkbox" id="enabledToggle">
+            </label>
+            <label class="master-toggle sub-toggle">
+                <span>Show button on chat hover</span>
+                <input type="checkbox" id="hoverToggle">
+            </label>
+        </div>
 
         <div class="field">
-            <label for="newUsername" class="section-title">Add new user to highlight</label>
+            <label for="newUsername" class="section-title">Add a user</label>
             <div class="add-username-container">
                 <input type="text" id="newUsername" placeholder="Username..." autocomplete="off" spellcheck="false">
-                <select id="highlightType">
-                    <option value="whitelisted" selected>Whitelist</option>
-                    <option value="blacklisted">Blacklist</option>
+                <select id="newUserMode">
+                    <option value="white" selected>Highlight</option>
+                    <option value="black">Exclude</option>
                 </select>
                 <button id="addUserButton">Add</button>
             </div>
             <p id="newUsernameError" class="error" hidden></p>
         </div>
 
-        <div class="field">
-            <div class="badge-row">
-                <label for="whitelistColor" class="section-title" style="flex-grow: 1;">Whitelist color</label>
-                <input type="color" id="whitelistColor">
+        <details id="usersDetails" class="list-element" open>
+            <summary><span id="usersCount">0</span> Users</summary>
+            <table class="rules-table" id="usersTable">
+                <thead>
+                    <tr>
+                        <th class="col-name">User</th>
+                        <th class="col-mode">Mode</th>
+                        <th class="col-color">Color</th>
+                        <th class="col-remove"><span class="sr-only">Remove</span></th>
+                    </tr>
+                </thead>
+                <tbody id="usersBody"></tbody>
+            </table>
+            <p class="empty-hint" id="usersHint" hidden>
+                No user yet. Add one above, or hover a chat message and use the
+                button on its left edge.
+            </p>
+            <div class="default-color-row">
+                <label for="defaultColor">Default highlight color</label>
+                <input type="color" id="defaultColor">
             </div>
-        </div>
-
-        <div class="field">
-            <details id="channelBadgesDetails" class="list-element" open>
-                <summary><span id="channelBadgesTitle">This channel</span></summary>
-                <div class="badge-list" id="channelBadges"></div>
-                <p class="empty-hint" id="channelBadgesHint" hidden></p>
-            </details>
-
-            <details id="globalBadgesDetails" class="list-element">
-                <summary><span id="globalBadgesCount">0</span> Global badges</summary>
-                <div class="badge-list" id="globalBadges"></div>
-                <p class="empty-hint" id="globalBadgesHint" hidden>
-                    None yet. A badge is recognised as global once it shows up on a
-                    second channel.
-                </p>
-            </details>
-
-            <details id="otherBadgesDetails" class="list-element">
-                <summary><span id="otherBadgesCount">0</span> Other channels</summary>
-                <div class="badge-list" id="otherBadges"></div>
-            </details>
-        </div>
-
-        <details id="whitelistDetails" class="list-element">
-            <summary><span id="whitelistCount">0</span> Whitelisted users</summary>
-            <div class="user-list" id="whitelistUsers"></div>
         </details>
 
-        <details id="blacklistDetails" class="list-element">
-            <summary><span id="blacklistCount">0</span> Blacklisted users</summary>
-            <div class="user-list" id="blacklistUsers"></div>
+        <details id="channelBadgesDetails" class="list-element" open>
+            <summary><span id="channelBadgesTitle">This channel</span></summary>
+            <table class="rules-table">
+                <thead>
+                    <tr>
+                        <th class="col-name">Badge</th>
+                        <th class="col-mode">Mode</th>
+                        <th class="col-color">Color</th>
+                    </tr>
+                </thead>
+                <tbody id="channelBadges"></tbody>
+            </table>
+            <p class="empty-hint" id="channelBadgesHint" hidden></p>
+        </details>
+
+        <details id="globalBadgesDetails" class="list-element">
+            <summary><span id="globalBadgesCount">0</span> Global badges</summary>
+            <table class="rules-table">
+                <thead>
+                    <tr>
+                        <th class="col-name">Badge</th>
+                        <th class="col-mode">Mode</th>
+                        <th class="col-color">Color</th>
+                    </tr>
+                </thead>
+                <tbody id="globalBadges"></tbody>
+            </table>
+            <p class="empty-hint" id="globalBadgesHint" hidden>
+                None yet. A badge is recognised as global once it shows up on a
+                second channel.
+            </p>
+        </details>
+
+        <details id="otherBadgesDetails" class="list-element">
+            <summary><span id="otherBadgesCount">0</span> Other channels</summary>
+            <table class="rules-table">
+                <thead>
+                    <tr>
+                        <th class="col-name">Badge</th>
+                        <th class="col-mode">Mode</th>
+                        <th class="col-color">Color</th>
+                    </tr>
+                </thead>
+                <tbody id="otherBadges"></tbody>
+            </table>
         </details>
 
     </div>

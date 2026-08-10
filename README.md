@@ -61,20 +61,45 @@ La chaîne est lue dans l'URL (`/<chaîne>`, `/popout/<chaîne>/chat`,
 `/moderator/<chaîne>`, `dashboard.twitch.tv/u/<chaîne>`), avec repli sur un lien
 de chaîne du DOM pour les pages de VOD, dont l'URL ne porte que l'id de vidéo.
 
+### Règles : trois états
+
+Une règle porte sur un utilisateur ou sur un badge, et prend l'un de trois
+modes. C'est le même contrôle dans les deux tables du popup.
+
+| Mode | Effet |
+| ---- | ----- |
+| `off` | la règle existe mais ne fait rien — permet de désactiver sans perdre le réglage |
+| `white` | colore la ligne |
+| `black` | empêche toute coloration de la ligne |
+
+Le mode `black` sur un badge remplace les exclusions codées en dur de la v1
+(`:not([data-a-user="fossabot"])`) : exclure le badge « Diffuseur », par exemple.
+
 ### Priorité appliquée à une ligne
 
-1. utilisateur blacklisté → aucun highlight ;
-2. utilisateur whitelisté → couleur de whitelist ;
-3. sinon, couleur du premier badge activé rencontré dans le DOM (ce qui suit
+1. utilisateur en `black` → aucun highlight ;
+2. utilisateur en `white` → sa couleur, ou `defaultColor` s'il n'en a pas ;
+3. un badge en `black` sur la ligne → aucun highlight ;
+4. sinon, couleur du premier badge en `white` rencontré dans le DOM (ce qui suit
    l'ordre d'affichage de Twitch : diffuseur, modérateur, VIP, abonné…).
+
+Une règle nominative l'emporte donc toujours sur une règle de badge, dans les
+deux sens.
+
+### Interrupteurs
+
+- `enabled` — interrupteur maître : coupe les couleurs **et** le bouton de survol ;
+- `showHoverButton` — garde les couleurs mais retire le bouton dans le chat.
 
 ### Stockage
 
 `chrome.storage.sync` pour les réglages (partagés entre machines),
-`chrome.storage.local` pour l'index des imageIds. La migration depuis le format
-v1 (`local.twitchUsersHighlighter`) est automatique et conserve les listes et
-les couleurs choisies ; les badges v1 sont classés `global`. L'index v2, qui ne
-portait pas la portée, est jeté et se reconstruit à la première lecture.
+`chrome.storage.local` pour l'index des imageIds. Les migrations depuis v1
+(`local.twitchUsersHighlighter`), v2 et v3 sont automatiques : les listes
+`whitelisted`/`blacklisted` fusionnent en une table `users` portant un mode, les
+badges v1/v2 sont classés `global`, et les couleurs choisies sont conservées.
+L'index v2, qui ne portait pas la portée, est jeté et se reconstruit à la
+première lecture.
 
 ## TODOLIST
 
@@ -84,8 +109,8 @@ portait pas la portée, est jeté et se reconstruit à la première lecture.
 - ~~Move button ("add to whitelist" | ...) on user message line hover if following user message line is from the same user~~
 - ~~Activer la fonctionnalité de highlight au chargement de la page~~
 - ~~Ajouter bouton d'activation de la fonctionnalité de highlight depuis les messages de chat~~
-- Add button on item list (whitelist | blacklist) to switch between whitelist and blacklist
-- Add button "eye" on item list (whitelist | blacklist) to enable or disable traitement de l'user (to keep it on the list)
+- ~~Add button on item list (whitelist | blacklist) to switch between whitelist and blacklist~~ (colonne Mode de la table)
+- ~~Add button "eye" on item list (whitelist | blacklist) to enable or disable traitement de l'user (to keep it on the list)~~ (mode `off`)
 - Add button to hide whitelisted users
 - Add button to hide blacklisted users
 

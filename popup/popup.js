@@ -7,11 +7,17 @@
 
     const els = {
         enabledToggle: document.getElementById("enabledToggle"),
+        hoverToggle: document.getElementById("hoverToggle"),
         newUsername: document.getElementById("newUsername"),
-        highlightType: document.getElementById("highlightType"),
+        newUserMode: document.getElementById("newUserMode"),
         addUserButton: document.getElementById("addUserButton"),
         newUsernameError: document.getElementById("newUsernameError"),
-        whitelistColor: document.getElementById("whitelistColor"),
+        defaultColor: document.getElementById("defaultColor"),
+        usersBody: document.getElementById("usersBody"),
+        usersTable: document.getElementById("usersTable"),
+        usersCount: document.getElementById("usersCount"),
+        usersHint: document.getElementById("usersHint"),
+        usersDetails: document.getElementById("usersDetails"),
         channelBadges: document.getElementById("channelBadges"),
         channelBadgesTitle: document.getElementById("channelBadgesTitle"),
         channelBadgesHint: document.getElementById("channelBadgesHint"),
@@ -21,13 +27,9 @@
         otherBadges: document.getElementById("otherBadges"),
         otherBadgesCount: document.getElementById("otherBadgesCount"),
         otherBadgesDetails: document.getElementById("otherBadgesDetails"),
-        whitelistDetails: document.getElementById("whitelistDetails"),
-        blacklistDetails: document.getElementById("blacklistDetails"),
-        whitelistCount: document.getElementById("whitelistCount"),
-        blacklistCount: document.getElementById("blacklistCount"),
-        whitelistUsers: document.getElementById("whitelistUsers"),
-        blacklistUsers: document.getElementById("blacklistUsers"),
     };
+
+    const { MODE } = TCH;
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
     let badgeSamples = new Map();
@@ -40,72 +42,161 @@
         els.newUsernameError.hidden = false;
     }
 
-    function clearError() {
-        els.newUsernameError.hidden = true;
+    const clearError = () => (els.newUsernameError.hidden = true);
+
+    // --- Cellules communes aux deux tables -----------------------------------
+
+    // Deux bascules plutôt qu'un menu : le troisième état est simplement
+    // "aucune des deux", et un clic suffit pour passer de l'un à l'autre.
+    function modeCell(entry, onChange) {
+        const cell = document.createElement("td");
+        cell.className = "col-mode";
+
+        const group = document.createElement("div");
+        group.className = "mode-group";
+
+        for (const [mode, symbol, title] of [
+            [MODE.WHITE, "✚", "Highlight"],
+            [MODE.BLACK, "⊘", "Never highlight"],
+        ]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `mode-button mode-${mode}`;
+            button.textContent = symbol;
+            button.title = title;
+            button.setAttribute("aria-pressed", String(entry.mode === mode));
+            button.addEventListener("click", () => {
+                // Recliquer sur le mode courant le désactive.
+                onChange(entry.mode === mode ? MODE.OFF : mode);
+            });
+            group.appendChild(button);
+        }
+
+        cell.appendChild(group);
+        return cell;
     }
 
-    // --- Rendu ---------------------------------------------------------------
+    function colorCell(value, enabled, onChange) {
+        const cell = document.createElement("td");
+        cell.className = "col-color";
 
-    function render() {
-        els.enabledToggle.checked = settings.enabled;
-        els.whitelistColor.value = settings.whitelistColor;
-        renderBadges();
-        renderUserList("whitelisted", els.whitelistUsers, els.whitelistCount);
-        renderUserList("blacklisted", els.blacklistUsers, els.blacklistCount);
+        const input = document.createElement("input");
+        input.type = "color";
+        input.value = value;
+        input.disabled = !enabled;
+        // Une entrée exclue n'a pas de couleur : on grise plutôt que de retirer
+        // le champ, pour que les colonnes restent alignées.
+        input.title = enabled ? "Highlight color" : "Not used in exclude mode";
+        input.addEventListener("change", () => onChange(input.value));
+
+        cell.appendChild(input);
+        return cell;
     }
+
+    // --- Table des utilisateurs ----------------------------------------------
+
+    function renderUsers() {
+        els.usersBody.textContent = "";
+        els.usersCount.textContent = settings.users.length;
+        els.usersHint.hidden = settings.users.length > 0;
+        els.usersTable.hidden = settings.users.length === 0;
+        els.defaultColor.value = settings.defaultColor;
+
+        [...settings.users]
+            .sort((a, b) => a.login.localeCompare(b.login))
+            .forEach((user) => {
+                const row = document.createElement("tr");
+
+                const name = document.createElement("td");
+                name.className = "col-name";
+                name.textContent = user.login;
+                name.title = user.login;
+                row.appendChild(name);
+
+                row.appendChild(
+                    modeCell(user, (mode) => {
+                        user.mode = mode;
+                        persist();
+                        renderUsers();
+                    })
+                );
+
+                row.appendChild(
+                    colorCell(user.color || settings.defaultColor, user.mode === MODE.WHITE, (color) => {
+                        user.color = color;
+                        persist();
+                    })
+                );
+
+                const removeCell = document.createElement("td");
+                removeCell.className = "col-remove";
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "remove-button";
+                remove.textContent = "✕";
+                remove.title = `Remove ${user.login}`;
+                remove.addEventListener("click", () => {
+                    settings.users = settings.users.filter((u) => u !== user);
+                    persist();
+                    renderUsers();
+                });
+                removeCell.appendChild(remove);
+                row.appendChild(removeCell);
+
+                els.usersBody.appendChild(row);
+            });
+    }
+
+    // --- Tables de badges ----------------------------------------------------
 
     // Twitch donne un libellé distinct à chaque palier d'abonnement ("Abonné à
     // 6 mois", "Abonné à 12 mois"...), donc un badge par palier. Le tri
     // alphabétique les regroupe visuellement. Il n'a aucun effet sur la
     // priorité des couleurs, décidée par l'ordre des badges dans le DOM.
-    const byLabel = (a, b) =>
-        (a.label || a.key).localeCompare(b.label || b.key);
+    const byLabel = (a, b) => (a.label || a.key).localeCompare(b.label || b.key);
 
     function badgeRow(badge) {
-        const row = document.createElement("div");
-        row.className = "badge-row";
+        const row = document.createElement("tr");
 
-        const label = document.createElement("label");
-
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = badge.isEnabled;
-        checkbox.addEventListener("change", () => {
-            badge.isEnabled = checkbox.checked;
-            persist();
-        });
-        label.appendChild(checkbox);
+        const name = document.createElement("td");
+        name.className = "col-name";
 
         const sample = badgeSamples.get(badge.key);
         if (sample) {
             const img = document.createElement("img");
             img.src = TCH.badgeImageUrl(sample);
             img.alt = "";
-            label.appendChild(img);
+            name.appendChild(img);
         }
 
         const text = document.createElement("span");
         text.className = "badge-label";
         text.textContent = badge.label || badge.key;
         text.title = badge.label || badge.key;
-        label.appendChild(text);
+        name.appendChild(text);
+        row.appendChild(name);
 
-        const color = document.createElement("input");
-        color.type = "color";
-        color.value = badge.color;
-        color.addEventListener("change", () => {
-            badge.color = color.value;
-            persist();
-        });
+        row.appendChild(
+            modeCell(badge, (mode) => {
+                badge.mode = mode;
+                persist();
+                renderBadges();
+            })
+        );
 
-        row.appendChild(label);
-        row.appendChild(color);
+        row.appendChild(
+            colorCell(badge.color, badge.mode !== MODE.BLACK, (color) => {
+                badge.color = color;
+                persist();
+            })
+        );
+
         return row;
     }
 
-    function fill(containerEl, badges) {
-        containerEl.textContent = "";
-        badges.sort(byLabel).forEach((badge) => containerEl.appendChild(badgeRow(badge)));
+    function fill(bodyEl, badges) {
+        bodyEl.textContent = "";
+        badges.sort(byLabel).forEach((badge) => bodyEl.appendChild(badgeRow(badge)));
     }
 
     // Trois groupes : la chaîne affichée, les badges communs à tout Twitch, et
@@ -157,11 +248,14 @@
             const badges = others.get(scope);
             total += badges.length;
 
-            const heading = document.createElement("div");
+            const headingRow = document.createElement("tr");
+            const heading = document.createElement("td");
+            heading.colSpan = 3;
             heading.className = "scope-heading";
             heading.textContent =
                 scope === TCH.SCOPE_UNKNOWN ? "Unidentified channel" : scope;
-            els.otherBadges.appendChild(heading);
+            headingRow.appendChild(heading);
+            els.otherBadges.appendChild(headingRow);
 
             badges.sort(byLabel).forEach((badge) => {
                 els.otherBadges.appendChild(badgeRow(badge));
@@ -172,40 +266,19 @@
         els.otherBadgesDetails.hidden = total === 0;
     }
 
-    function renderUserList(list, containerEl, countEl) {
-        containerEl.textContent = "";
-        const users = settings[list];
-        countEl.textContent = users.length;
-
-        users.forEach((login) => {
-            const item = document.createElement("div");
-            item.className = "user-list-item";
-
-            const name = document.createElement("span");
-            name.textContent = login;
-            name.title = login;
-
-            const remove = document.createElement("button");
-            remove.type = "button";
-            remove.textContent = "✕";
-            remove.title = `Remove ${login}`;
-            remove.addEventListener("click", () => {
-                settings[list] = settings[list].filter((user) => user !== login);
-                persist();
-                render();
-            });
-
-            item.appendChild(name);
-            item.appendChild(remove);
-            containerEl.appendChild(item);
-        });
+    function render() {
+        els.enabledToggle.checked = settings.enabled;
+        els.hoverToggle.checked = settings.showHoverButton;
+        // Le bouton de survol n'a pas de sens si tout est coupé.
+        els.hoverToggle.disabled = !settings.enabled;
+        renderUsers();
+        renderBadges();
     }
 
     // --- Actions -------------------------------------------------------------
 
     function addUser() {
         const login = els.newUsername.value.trim().toLowerCase();
-        const list = els.highlightType.value;
 
         if (!login) return showError("Please enter a username");
         // Les logins Twitch se limitent à ces caractères ; valider ici évite en
@@ -217,17 +290,13 @@
         clearError();
         els.newUsername.value = "";
 
-        if (settings[list].includes(login)) return;
+        const existing = settings.users.find((user) => user.login === login);
+        if (existing) existing.mode = els.newUserMode.value;
+        else settings.users = [...settings.users, TCH.makeUser(login, els.newUserMode.value)];
 
-        // Les deux listes sont exclusives.
-        settings.whitelisted = settings.whitelisted.filter((u) => u !== login);
-        settings.blacklisted = settings.blacklisted.filter((u) => u !== login);
-        settings[list] = [...settings[list], login];
-
-        (list === "whitelisted" ? els.whitelistDetails : els.blacklistDetails).open = true;
-
+        els.usersDetails.open = true;
         persist();
-        render();
+        renderUsers();
     }
 
     els.addUserButton.addEventListener("click", addUser);
@@ -238,12 +307,19 @@
 
     els.enabledToggle.addEventListener("change", () => {
         settings.enabled = els.enabledToggle.checked;
+        els.hoverToggle.disabled = !settings.enabled;
         persist();
     });
 
-    els.whitelistColor.addEventListener("change", () => {
-        settings.whitelistColor = els.whitelistColor.value;
+    els.hoverToggle.addEventListener("change", () => {
+        settings.showHoverButton = els.hoverToggle.checked;
         persist();
+    });
+
+    els.defaultColor.addEventListener("change", () => {
+        settings.defaultColor = els.defaultColor.value;
+        persist();
+        renderUsers();
     });
 
     // Un badge peut être découvert pendant que le popup est ouvert.

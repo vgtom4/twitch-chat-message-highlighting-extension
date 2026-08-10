@@ -33,6 +33,11 @@
     background-color: #a33;
 }
 
+/* La ligne est colorée par un badge : le bouton propose d'exclure l'auteur. */
+#tch-action-button.tch-action-exclude {
+    background-color: #8c1210;
+}
+
 #tch-action-button:hover {
     filter: brightness(1.25);
 }

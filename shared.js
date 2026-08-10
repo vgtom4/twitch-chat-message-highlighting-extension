@@ -6,7 +6,12 @@
 globalThis.TCH = (() => {
     "use strict";
 
-    const VERSION = 3;
+    const VERSION = 4;
+
+    // Un badge comme un utilisateur peut être ignoré, colorer la ligne, ou au
+    // contraire empêcher toute coloration. Le troisième état remplace les
+    // exclusions codées en dur de la v1 (`:not([data-a-user="fossabot"])`).
+    const MODE = { OFF: "off", WHITE: "white", BLACK: "black" };
 
     // Réglages utilisateur : synchronisés entre les machines, volume faible.
     const SETTINGS_KEY = "tchSettings";
@@ -39,11 +44,15 @@ globalThis.TCH = (() => {
 
     const DEFAULT_SETTINGS = {
         version: VERSION,
+        // Interrupteur maître : coupe les couleurs *et* le bouton de survol.
         enabled: true,
-        whitelistColor: "#0c6bb8",
-        whitelisted: [],
-        blacklisted: [],
-        // [{ key, scope, label, color, isEnabled }]
+        // Permet de garder les couleurs sans le bouton dans le chat.
+        showHoverButton: true,
+        // Couleur des utilisateurs qui n'en ont pas choisi une.
+        defaultColor: "#0c6bb8",
+        // [{ login, mode, color }]
+        users: [],
+        // [{ key, scope, label, color, mode }]
         // `key` = `${scope}|${label normalisé}`, figée tant que la portée ne
         // change pas. `label` suit la langue de l'interface Twitch.
         badges: [],
@@ -76,24 +85,27 @@ globalThis.TCH = (() => {
     const isChannelScope = (scope) =>
         scope !== SCOPE_GLOBAL && scope !== SCOPE_UNKNOWN;
 
+    const makeUser = (login, mode, color) => ({ login, mode, color: color || null });
+
     // v1 stockait tout dans chrome.storage.local sous une seule clé, avec des
     // badges codés en dur reconnus par leur `alt`. On conserve les listes
     // d'utilisateurs et les couleurs choisies ; les imageIds se rempliront
     // d'eux-mêmes à la première lecture du chat.
     function migrateLegacy(legacy) {
-        const settings = {
-            ...DEFAULT_SETTINGS,
-            whitelisted: [],
-            blacklisted: [],
-            badges: [],
-        };
+        const settings = { ...DEFAULT_SETTINGS, users: [], badges: [] };
+        const seen = new Set();
 
-        if (Array.isArray(legacy.whitelisted)) {
-            settings.whitelisted = legacy.whitelisted.filter(isValidLogin);
-        }
-        if (Array.isArray(legacy.blacklisted)) {
-            settings.blacklisted = legacy.blacklisted.filter(isValidLogin);
-        }
+        const collect = (list, mode) => {
+            if (!Array.isArray(list)) return;
+            for (const login of list) {
+                if (!isValidLogin(login) || seen.has(login)) continue;
+                seen.add(login);
+                settings.users.push(makeUser(login, mode));
+            }
+        };
+        collect(legacy.whitelisted, MODE.WHITE);
+        collect(legacy.blacklisted, MODE.BLACK);
+
         if (Array.isArray(legacy.highlightedBadges)) {
             // Les badges de la v1 ("Vérifié", "Diffuseur") sont des badges
             // Twitch communs à toutes les chaînes.
@@ -104,28 +116,53 @@ globalThis.TCH = (() => {
                     scope: SCOPE_GLOBAL,
                     label: badge.label,
                     color: badge.color || pickColor(index),
-                    isEnabled: badge.isEnabled !== false,
+                    mode: badge.isEnabled === false ? MODE.OFF : MODE.WHITE,
                 }));
         }
 
         return settings;
     }
 
-    // v2 ne connaissait pas la notion de portée : ses badges n'étaient pas
-    // rattachés à une chaîne. On les considère globaux ; ceux qui étaient en
-    // réalité propres à une chaîne se re-scinderont à la prochaine visite.
+    // v2 ne rattachait pas les badges à une chaîne : on les considère globaux,
+    // ceux qui étaient en réalité propres à une chaîne se re-scinderont à la
+    // prochaine visite. v3 séparait les utilisateurs en deux listes et ne
+    // connaissait que deux états pour un badge.
     function upgradeSettings(settings) {
         if (settings.version === VERSION) return settings;
 
-        return {
+        const upgraded = {
+            ...DEFAULT_SETTINGS,
             ...settings,
             version: VERSION,
+            defaultColor: settings.defaultColor || settings.whitelistColor || DEFAULT_SETTINGS.defaultColor,
             badges: (settings.badges || []).map((badge) => ({
-                ...badge,
-                scope: badge.scope || SCOPE_GLOBAL,
                 key: badge.scope ? badge.key : makeKey(SCOPE_GLOBAL, badge.label || badge.key),
+                scope: badge.scope || SCOPE_GLOBAL,
+                label: badge.label,
+                color: badge.color,
+                mode: badge.mode || (badge.isEnabled ? MODE.WHITE : MODE.OFF),
             })),
         };
+
+        if (!Array.isArray(settings.users)) {
+            const seen = new Set();
+            upgraded.users = [];
+            for (const [list, mode] of [
+                [settings.whitelisted, MODE.WHITE],
+                [settings.blacklisted, MODE.BLACK],
+            ]) {
+                for (const login of list || []) {
+                    if (!isValidLogin(login) || seen.has(login)) continue;
+                    seen.add(login);
+                    upgraded.users.push(makeUser(login, mode));
+                }
+            }
+        }
+
+        delete upgraded.whitelisted;
+        delete upgraded.blacklisted;
+        delete upgraded.whitelistColor;
+        return upgraded;
     }
 
     // Renvoie { settings, badgeIndex }. Migre depuis v1/v2 si nécessaire.
@@ -150,8 +187,7 @@ globalThis.TCH = (() => {
         }
 
         // Défensif : le storage peut avoir été écrit par une version antérieure.
-        settings.whitelisted = settings.whitelisted || [];
-        settings.blacklisted = settings.blacklisted || [];
+        settings.users = settings.users || [];
         settings.badges = settings.badges || [];
 
         if (migrated) await saveSettings(settings);
@@ -190,6 +226,8 @@ globalThis.TCH = (() => {
 
     return {
         VERSION,
+        MODE,
+        makeUser,
         SETTINGS_KEY,
         INDEX_KEY,
         LEGACY_KEY,
