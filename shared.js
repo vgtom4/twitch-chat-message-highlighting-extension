@@ -33,6 +33,17 @@ globalThis.TCH = (() => {
     const SCOPE_EVENT = "event";
     const SCOPE_UNKNOWN = "?";
 
+    // Badges volontairement ignorés : jamais découverts, jamais listés, jamais
+    // pris en compte pour colorer une ligne. Ils ne disent rien de l'auteur du
+    // message, seulement de son vote, et pollueraient les listes.
+    const IGNORED_BADGE_IDS = new Set([
+        // Prédictions : les deux issues (bleu / rose).
+        "e33d8b46-f63b-4e67-996d-4a7dcec0ad33",
+        "4b76d5f2-91cc-4400-adf2-908a1e6cfd1e",
+    ]);
+
+    const isIgnoredBadge = (imageId) => IGNORED_BADGE_IDS.has(imageId);
+
     const BADGE_ID_RE = /\/badges\/v1\/([^/?#]+)/;
     const BADGE_CDN = "https://static-cdn.jtvnw.net/badges/v1";
     const LOGIN_RE = /^[a-zA-Z0-9_]{3,25}$/;
@@ -210,9 +221,44 @@ globalThis.TCH = (() => {
         settings.users = settings.users || [];
         settings.badges = settings.badges || [];
 
-        if (migrated) await saveSettings(settings);
+        const badgeIndex = readIndex(local[INDEX_KEY]);
+        // Rejoué à chaque chargement, pas au fil d'une migration : ajouter un
+        // identifiant à IGNORED_BADGE_IDS suffit alors à purger ce qui a déjà
+        // été découvert, sans nouvelle version de schéma.
+        const purged = purgeIgnored(settings, badgeIndex);
 
-        return { settings, badgeIndex: readIndex(local[INDEX_KEY]) };
+        if (migrated || purged) await saveSettings(settings);
+        if (purged) await saveBadgeIndex(badgeIndex);
+
+        return { settings, badgeIndex };
+    }
+
+    // Retire de l'index les badges ignorés, et les entrées de réglages qui n'ont
+    // plus aucun imageId légitime. Un badge jamais indexé est laissé tel quel :
+    // c'est le cas des réglages migrés, dont les imageIds ne sont pas connus.
+    function purgeIgnored(settings, badgeIndex) {
+        const fromIgnored = new Set();
+        const fromOthers = new Set();
+        let changed = false;
+
+        for (const [imageId, ref] of Object.entries(badgeIndex)) {
+            if (isIgnoredBadge(imageId)) {
+                fromIgnored.add(ref.key);
+                delete badgeIndex[imageId];
+                changed = true;
+            } else {
+                fromOthers.add(ref.key);
+            }
+        }
+
+        const doomed = [...fromIgnored].filter((key) => !fromOthers.has(key));
+        if (doomed.length) {
+            settings.badges = settings.badges.filter(
+                (badge) => !doomed.includes(badge.key)
+            );
+        }
+
+        return changed;
     }
 
     // L'index v2 associait un imageId à une simple chaîne de caractères. Le
@@ -257,6 +303,8 @@ globalThis.TCH = (() => {
         DEFAULT_SETTINGS,
         AUTO_COLORS,
         homeScope,
+        IGNORED_BADGE_IDS,
+        isIgnoredBadge,
         normalizeLabel,
         isValidLogin,
         extractBadgeId,

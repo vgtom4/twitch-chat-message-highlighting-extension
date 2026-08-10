@@ -31,6 +31,18 @@ popup avec son icône réelle. Aucune API Twitch, aucun Client-Id, aucun OAuth.
 Si l'utilisateur change la langue de Twitch, l'imageId reste connu : seul le
 libellé affiché est mis à jour, sans créer de doublon.
 
+### Badges ignorés
+
+`IGNORED_BADGE_IDS` dans [shared.js](shared.js) liste des imageIds à ne jamais
+traiter : ni découverts, ni listés dans le popup, ni pris en compte pour colorer
+une ligne. Y figurent les badges de prédiction (les deux issues), qui indiquent
+le vote de l'auteur du message et non ce qu'il est.
+
+La purge se rejoue à **chaque** chargement, pas au fil d'une migration : ajouter
+un identifiant à la liste suffit à retirer ce qui a déjà été découvert, sans
+nouvelle version de schéma. Un badge dont il reste au moins un imageId légitime
+est conservé ; seul l'imageId ignoré quitte l'index.
+
 ### Portée d'un badge
 
 Un badge appartient à l'une de trois portées, et sa clé est

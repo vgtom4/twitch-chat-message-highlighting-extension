@@ -189,7 +189,9 @@
     // indépendant de la langue), pas par l'`alt`.
     function resolveBadge(img) {
         const imageId = TCH.extractBadgeId(img.getAttribute("src"));
-        if (!imageId) return null;
+        // Badges de la liste d'exclusion (prédictions...) : ni découverts, ni
+        // pris en compte pour la couleur.
+        if (!imageId || TCH.isIgnoredBadge(imageId)) return null;
 
         const label = (img.getAttribute("alt") || "").trim();
         const ref = badgeIndex[imageId];
