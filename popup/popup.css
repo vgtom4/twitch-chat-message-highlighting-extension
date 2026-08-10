@@ -8,6 +8,14 @@
     font-family: "Inter", "Segoe UI", Roobert, system-ui, sans-serif;
 }
 
+/* Toute règle `display` de cette feuille l'emporterait sinon sur le
+   `display: none` que le navigateur applique à [hidden] : un style auteur bat
+   toujours la feuille du navigateur. Sans ça, `hidden` ne masque plus les
+   éléments qui portent un display explicite (.settings-panel, par exemple). */
+[hidden] {
+    display: none !important;
+}
+
 body {
     background-color: #131516;
     color: #efeff1;
