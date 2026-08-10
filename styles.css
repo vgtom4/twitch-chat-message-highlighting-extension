@@ -1,31 +1,38 @@
-/* Appliquer le fond bleu si le badge "Vérifié" est présent, mais pas le badge ["Diffuseur"] ni les utilisateurs ["fossabot", "streamelements"] */
-/* .chat-line__message:has(button[data-a-target="chat-badge"] img[alt="Vérifié"]):not([data-a-user="fossabot"]):not([data-a-user="dreamboum"]):not([data-a-user="streamelements"]):not(:has(button[data-a-target="chat-badge"] img[alt="Diffuseur"])) {
-    background-color: #4808fb !important;
+/* Règle unique : la couleur est portée par une variable CSS que content.js pose
+   en inline sur la ligne. Plus de sélecteur par utilisateur, plus de chaîne de
+   :not() par utilisateur exclu, plus de feuille régénérée à chaque changement. */
+
+.chat-line__message[data-tch-highlight],
+.vod-message[data-tch-highlight] {
+    background-color: var(--tch-highlight-color) !important;
 }
 
-.chat-line__message[data-a-user="xxstaz"],
-.chat-line__message[data-a-user="vgtom4"] {
-    background-color: #0c6bb8 !important;
-} */
+/* Ancrage du bouton d'action, posé uniquement sur la ligne survolée. */
+.tch-hover-host {
+    position: relative;
+}
 
-/* Appliquer le fond vert si le badge "Diffuseur" est présent (peu importe l'utilisateur) */
-/* .chat-line__message:has(button[data-a-target="chat-badge"] img[alt="Diffuseur"]) {
-    background-color: #00643a !important;
-} */
-
-.button-highlight-action {
+#tch-action-button {
     position: absolute;
     top: 0;
     left: 0;
     height: 100%;
-    width: 10px;
-    z-index: 1000;
-}
-
-.button-highlight-action-remove {
-    background-color: #ff0000;
-}
-
-.button-highlight-action-add {
+    width: 12px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    z-index: 10;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    color: #fff;
     background-color: #6441a5;
+}
+
+#tch-action-button.tch-action-remove {
+    background-color: #a33;
+}
+
+#tch-action-button:hover {
+    filter: brightness(1.25);
 }

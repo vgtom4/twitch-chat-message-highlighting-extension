@@ -1,252 +1,198 @@
-// ELEMENTS
-const newUsernameElement = document.getElementById("newUsername");
-const highlightTypeElement = document.getElementById("highlightType");
+// Le popup ne fait qu'écrire dans chrome.storage : les onglets Twitch ouverts
+// réagissent d'eux-mêmes via chrome.storage.onChanged. Plus de service worker
+// ni d'injection de script à la demande.
 
-const addUserButton = document.getElementById("addUserButton");
-const newUsernameError = document.getElementById("new-username-error");
+(() => {
+    "use strict";
 
-const highlightCheckboxes = document.getElementById("highlightCheckboxes");
-const highlightDiffusersMessages = document.getElementById("highlightDiffusersMessages");
-const highlightVerifiedMessages = document.getElementById("highlightVerifiedMessages");
+    const els = {
+        enabledToggle: document.getElementById("enabledToggle"),
+        newUsername: document.getElementById("newUsername"),
+        highlightType: document.getElementById("highlightType"),
+        addUserButton: document.getElementById("addUserButton"),
+        newUsernameError: document.getElementById("newUsernameError"),
+        whitelistColor: document.getElementById("whitelistColor"),
+        badgeList: document.getElementById("badgeList"),
+        badgeHint: document.getElementById("badgeHint"),
+        whitelistDetails: document.getElementById("whitelistDetails"),
+        blacklistDetails: document.getElementById("blacklistDetails"),
+        whitelistCount: document.getElementById("whitelistCount"),
+        blacklistCount: document.getElementById("blacklistCount"),
+        whitelistUsers: document.getElementById("whitelistUsers"),
+        blacklistUsers: document.getElementById("blacklistUsers"),
+    };
 
-const diffuserColor = document.getElementById("diffuserColor");
-const verifiedColor = document.getElementById("verifiedColor");
+    let settings = { ...TCH.DEFAULT_SETTINGS };
+    let badgeSamples = new Map();
 
-const whitelisterUserListDetails = document.getElementById("whitelisterUserListDetails");
-const blacklistedUserListDetails = document.getElementById("blacklistedUserListDetails");
-const whitelisterUserListDetailsTitleCount = document.getElementById("whitelisterUserListCount");
-const blacklistedUserListDetailsTitleCount = document.getElementById("blacklistedUserListCount");
-const whitelisterUserList = document.getElementById("whitelisterUserList");
-const blacklistedUserList = document.getElementById("blacklistedUserList");
+    const persist = () => TCH.saveSettings(settings);
 
-let cachedUsers = { whitelisted: [], blacklisted: [], highlightedBadges: [{ type: 'diffuser', label: 'Diffuseur', color: '#00643a', isEnabled: true }, { type: 'verified', label: 'Vérifié', color: '#4808fb', isEnabled: true },] };
-
-// Hide/show helpers
-const hideElement = (elem) => (elem.style.display = "none");
-const showElement = (elem) => (elem.style.display = "");
-const disableElement = (elem) => (elem.disabled = true);
-const enableElement = (elem) => (elem.disabled = false);
-
-// Add user
-const addUser = () => {
-	const username = newUsernameElement.value.trim().toLowerCase();
-	const highlightType = highlightTypeElement.value;
-
-	if (!username) {
-		showElement(newUsernameError);
-		return;
-	}
-
-	// si l'utilisateur est deja dans la liste, ne rien faire
-	if (cachedUsers[highlightType].includes(username)) {
-		newUsernameElement.value = "";
-		return;
-	}
-
-	// Clone cachedUsers pour éviter les modifications par référence
-	let updatedUsers = { ...cachedUsers };
-
-	// Vérifier et initialiser la liste si nécessaire
-	if (!Array.isArray(updatedUsers[highlightType])) {
-		updatedUsers[highlightType] = [];
-	}
-
-	// Ajouter le nouvel utilisateur
-	updatedUsers[highlightType] = [...updatedUsers[highlightType], username];
-
-	if (highlightType === "whitelisted") {
-		// open details
-		whitelisterUserListDetails.open = true;
-	} else if (highlightType === "blacklisted") {
-		// open details
-		blacklistedUserListDetails.open = true;
-	}
-
-	// si l'utilisateur était déjà dans l'une des autres listes, le retirer
-	Object.keys(updatedUsers).filter((key) => key !== highlightType).forEach((key) => {
-		updatedUsers[key] = updatedUsers[key].filter((user) => user !== username);
-	})
-
-	if (highlightType === "whitelisted") {
-		updatedUsers.blacklisted = updatedUsers.blacklisted.filter((user) => user !== username);
-	} else if (highlightType === "blacklisted") {
-		updatedUsers.whitelisted = updatedUsers.whitelisted.filter((user) => user !== username);
-	}
-
-	// Mettre à jour le stockage local
-	chrome.storage.local.set({ twitchUsersHighlighter: updatedUsers }, () => {
-		// Mettre à jour après la sauvegarde réussie
-		cachedUsers = updatedUsers;
-		newUsernameElement.value = "";
-		hideElement(newUsernameError);
-		refreshUsersList(cachedUsers);
-	});
-};
-addUserButton.onclick = () => {
-	addUser();
-};
-
-newUsernameElement.onkeydown = (e) => {
-	if (e.key === "Enter") {
-		addUser();
-	}
-};
-
-// Initialize cachedUsers and refresh UI
-chrome.storage.local.get(["twitchUsersHighlighter"], (result) => {
-	cachedUsers = result.twitchUsersHighlighter || { whitelisted: [], blacklisted: [], highlightedBadges: [] };
-	console.log(cachedUsers);
-	
-	if (!cachedUsers.whitelisted) {
-		cachedUsers.whitelisted = [];
-	}
-	if (!cachedUsers.blacklisted) {
-		cachedUsers.blacklisted = [];
-	}
-	if (!cachedUsers.highlightedBadges) {
-        cachedUsers.highlightedBadges = [{ type: 'diffuser', label: 'Diffuseur', color: '#00643a', isEnabled: true }, { type: 'verified', label: 'Vérifié', color: '#4808fb', isEnabled: true }];
+    function showError(message) {
+        els.newUsernameError.textContent = message;
+        els.newUsernameError.hidden = false;
     }
-	refreshUsersList(cachedUsers);
-});
 
-// Refresh user lists
-function refreshUsersList(twitchUsersHighlighter) {
-	const { whitelisted, blacklisted, highlightedBadges } = twitchUsersHighlighter || { whitelisted: [], blacklisted: [], highlightedBadges: [] };
+    function clearError() {
+        els.newUsernameError.hidden = true;
+    }
 
-	// User badges
-	highlightCheckboxes.innerHTML = "";
-	(highlightedBadges || []).forEach(({ type, label, color, isEnabled }) => {
-		const checkbox = document.createElement("input");
-		checkbox.id = `checkbox_user_type_${type}`;
-		checkbox.type = "checkbox";
-		checkbox.checked = isEnabled;
-		checkbox.dataset.userBadge = type;
+    // --- Rendu ---------------------------------------------------------------
 
-		const colorInput = document.createElement("input");
-		colorInput.type = "color";
-		colorInput.id = `color_user_type_${type}`;
-		colorInput.value = color;
-		colorInput.addEventListener("change", (e) => {
-			const updatedUsers = {
-				...cachedUsers,
-				highlightedBadges: cachedUsers.highlightedBadges.map((userBadge) => {
-					if (userBadge.type === type) {
-						console.log(e.target.value);
-						return { ...userBadge, color: e.target.value };
-					}
-					return userBadge;
-				}),
-			};
-			cachedUsers = updatedUsers;
-			chrome.storage.local.set({ twitchUsersHighlighter: updatedUsers }, () => {
-				refreshUsersList(updatedUsers);
-			});
-		});
+    function render() {
+        els.enabledToggle.checked = settings.enabled;
+        els.whitelistColor.value = settings.whitelistColor;
+        renderBadges();
+        renderUserList("whitelisted", els.whitelistUsers, els.whitelistCount);
+        renderUserList("blacklisted", els.blacklistUsers, els.blacklistCount);
+    }
 
-		const labelElement = document.createElement("label");
-		labelElement.appendChild(checkbox);
-		const span = document.createElement("span");
-		span.textContent = `Highlight ${label}`;
-		labelElement.appendChild(span);
+    function renderBadges() {
+        els.badgeList.textContent = "";
+        els.badgeHint.hidden = settings.badges.length > 0;
 
-		const divItem = document.createElement("div");
-		divItem.className = "checkbox-container-user-types-item";
+        // Twitch donne un libellé distinct à chaque palier d'abonnement
+        // ("Abonné à 6 mois", "Abonné à 12 mois"...), donc un badge par palier.
+        // Le tri alphabétique les regroupe visuellement. Il n'a aucun effet sur
+        // la priorité des couleurs, décidée par l'ordre des badges dans le DOM.
+        const sorted = [...settings.badges].sort((a, b) =>
+            (a.label || a.key).localeCompare(b.label || b.key)
+        );
 
-		divItem.appendChild(labelElement);
-		divItem.appendChild(colorInput);
+        sorted.forEach((badge) => {
+            const row = document.createElement("div");
+            row.className = "badge-row";
 
-		highlightCheckboxes.appendChild(divItem);
-	});
+            const label = document.createElement("label");
 
-	// Whitelisted users
-	whitelisterUserList.innerHTML = "";
-	whitelisted.forEach((username) => {
-		const userItem = createUserListItem("whitelisted", username);
-		whitelisterUserList.appendChild(userItem);
-	});
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = badge.isEnabled;
+            checkbox.addEventListener("change", () => {
+                badge.isEnabled = checkbox.checked;
+                persist();
+            });
 
-	// Count whitelisted users
-	whitelisterUserListCount.textContent = whitelisted.length;
+            const sample = badgeSamples.get(badge.key);
+            if (sample) {
+                const img = document.createElement("img");
+                img.src = TCH.badgeImageUrl(sample);
+                img.alt = "";
+                label.appendChild(img);
+            }
 
-	// Blacklisted users
-	blacklistedUserList.innerHTML = "";
-	blacklisted.forEach((username) => {
-		const userItem = createUserListItem("blacklisted", username);
-		blacklistedUserList.appendChild(userItem);
-	});
+            const text = document.createElement("span");
+            text.className = "badge-label";
+            text.textContent = badge.label || badge.key;
+            text.title = badge.label || badge.key;
 
-	// Count blacklisted users
-	blacklistedUserListDetailsTitleCount.textContent = blacklisted.length;
+            const color = document.createElement("input");
+            color.type = "color";
+            color.value = badge.color;
+            color.addEventListener("change", () => {
+                badge.color = color.value;
+                persist();
+            });
 
-	// applyDynamicStyles(twitchUsersHighlighter);
+            label.insertBefore(checkbox, label.firstChild);
+            label.appendChild(text);
+            row.appendChild(label);
+            row.appendChild(color);
+            els.badgeList.appendChild(row);
+        });
+    }
 
-	chrome.runtime.sendMessage({
-		action: "applyStyles",
-		twitchUsersHighlighter: cachedUsers
-	});
-}
+    function renderUserList(list, containerEl, countEl) {
+        containerEl.textContent = "";
+        const users = settings[list];
+        countEl.textContent = users.length;
 
-// Create user list item
-function createUserListItem(type, username) {
-	const div = document.createElement("div");
-	div.className = "user-list-item";
-	div.style.display = "flex";
-	div.style.justifyContent = "space-between";
-	div.style.alignItems = "center";
-	div.dataset.username = username;
+        users.forEach((login) => {
+            const item = document.createElement("div");
+            item.className = "user-list-item";
 
-	const span = document.createElement("span");
-	span.textContent = username;
+            const name = document.createElement("span");
+            name.textContent = login;
+            name.title = login;
 
-	const button = document.createElement("button");
-	button.className = "remove-user-button";
-	button.textContent = "X";
-	button.addEventListener("click", () => removeUser(type, username));
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.textContent = "✕";
+            remove.title = `Remove ${login}`;
+            remove.addEventListener("click", () => {
+                settings[list] = settings[list].filter((user) => user !== login);
+                persist();
+                render();
+            });
 
-	div.appendChild(span);
-	div.appendChild(button);
+            item.appendChild(name);
+            item.appendChild(remove);
+            containerEl.appendChild(item);
+        });
+    }
 
-	return div;
-}
+    // --- Actions -------------------------------------------------------------
 
-// Remove user
-function removeUser(type, username) {
-	const updatedUsers = {
-		...cachedUsers,
-		[type]: cachedUsers[type].filter((user) => user !== username),
-	};
-	console.log(updatedUsers);
-	
+    function addUser() {
+        const login = els.newUsername.value.trim().toLowerCase();
+        const list = els.highlightType.value;
 
-	chrome.storage.local.set({ twitchUsersHighlighter: updatedUsers }, () => {
-		cachedUsers = updatedUsers;
-		refreshUsersList(cachedUsers);
-	});
-}
+        if (!login) return showError("Please enter a username");
+        // Les logins Twitch se limitent à ces caractères ; valider ici évite en
+        // plus d'injecter n'importe quoi dans le storage.
+        if (!TCH.isValidLogin(login)) {
+            return showError("Letters, digits and _ only (3-25 chars)");
+        }
 
-// Checkbox change event
-highlightCheckboxes.addEventListener("change", (e) => {
-	const isEnabled = e.target.checked;
-	const updatedUsers = {
-		...cachedUsers,
-		highlightedBadges: cachedUsers.highlightedBadges.map((userBadge) => {
-			if (userBadge.type === e.target.dataset.userBadge) {
-				return { ...userBadge, isEnabled };
-			}
-			return userBadge;
-		}),
-	};
-	chrome.storage.local.set({ twitchUsersHighlighter: updatedUsers }, () => {
-		cachedUsers = updatedUsers;
-		refreshUsersList(cachedUsers);
-	});
-});
+        clearError();
+        els.newUsername.value = "";
 
-// Fonction pour appliquer les styles dynamiques
-function applyDynamicStyles(twitchUsersHighlighter) {
-    // Envoyer un message au script de fond pour appliquer les styles
-    chrome.runtime.sendMessage({
-        action: "applyStyles",
-        twitchUsersHighlighter: twitchUsersHighlighter
+        if (settings[list].includes(login)) return;
+
+        // Les deux listes sont exclusives.
+        settings.whitelisted = settings.whitelisted.filter((u) => u !== login);
+        settings.blacklisted = settings.blacklisted.filter((u) => u !== login);
+        settings[list] = [...settings[list], login];
+
+        (list === "whitelisted" ? els.whitelistDetails : els.blacklistDetails).open = true;
+
+        persist();
+        render();
+    }
+
+    els.addUserButton.addEventListener("click", addUser);
+    els.newUsername.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") addUser();
     });
-}
+    els.newUsername.addEventListener("input", clearError);
+
+    els.enabledToggle.addEventListener("change", () => {
+        settings.enabled = els.enabledToggle.checked;
+        persist();
+    });
+
+    els.whitelistColor.addEventListener("change", () => {
+        settings.whitelistColor = els.whitelistColor.value;
+        persist();
+    });
+
+    // Un badge peut être découvert pendant que le popup est ouvert.
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "sync" && changes[TCH.SETTINGS_KEY]) {
+            settings = { ...TCH.DEFAULT_SETTINGS, ...changes[TCH.SETTINGS_KEY].newValue };
+            render();
+        }
+        if (area === "local" && changes[TCH.INDEX_KEY]) {
+            badgeSamples = TCH.badgeSamples(changes[TCH.INDEX_KEY].newValue || {});
+            renderBadges();
+        }
+    });
+
+    async function init() {
+        const state = await TCH.loadState();
+        settings = state.settings;
+        badgeSamples = TCH.badgeSamples(state.badgeIndex);
+        render();
+    }
+
+    init();
+})();

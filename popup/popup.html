@@ -1,201 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Twitch Highlighter Messages</title>
-    <!-- <link rel="stylesheet" href="bulma.min.css" /> -->
-    <link href="https://db.onlinewebfonts.com/c/d6ae884b0a2f1a5346717fc160db2d28?family=Roobert" rel="stylesheet">
-    <style>
-        @import url(https://db.onlinewebfonts.com/c/d6ae884b0a2f1a5346717fc160db2d28?family=Roobert);
-
-        :root {
-            background-color: #131516;
-        }
-
-        * {
-            font-family: 'Roobert', sans-serif;
-        }
-
-        body {
-            background-color: #131516;
-            color: #FFFFFF;
-            width: 15rem;
-            padding: 1rem;
-            font-size: 16px;
-        }
-
-        input[type="text"] {
-            background-color: #1e1f21;
-            color: #FFFFFF;
-            border: 1px solid #36393f;
-            border-radius: 5px;
-            padding: 0.5rem;
-        }
-
-        input[type="text"]::placeholder {
-            color: #4a4e56;
-        }
-
-        input[type="color"] {
-            border-radius: 50%;
-            padding: 0;
-            border: 2px solid #DDD;
-            height: 1.5rem;
-            width: 1.5rem;
-        }
-
-        input[type="color"]::-moz-color-swatch {
-            border: none;
-        }
-
-        input[type="color"]::-webkit-color-swatch-wrapper {
-            padding: 0;
-            border-radius: 0;
-        }
-
-        input[type="color"]::-webkit-color-swatch {
-            border: none;
-        }
-
-        select {
-            background-color: #1e1f21;
-            color: #FFFFFF;
-            border: 1px solid #36393f;
-            border-radius: 5px;
-            padding: 0.5rem;
-            cursor: pointer;
-        }
-
-        button {
-            background-color: #451093;
-            color: #FFFFFF;
-            border: none;
-            border-radius: 5px;
-            padding: 0.5rem 1rem;
-            cursor: pointer;
-        }
-
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            width: 100%;
-        }
-
-        .field {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .add-username-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-        }
-    </style>
+    <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
-    <div class="container m-3">
+    <div class="container">
+
+        <label class="master-toggle">
+            <span>Highlighting enabled</span>
+            <input type="checkbox" id="enabledToggle">
+        </label>
 
         <div class="field">
-            <label>Add new user to highlight</label>
+            <label for="newUsername" class="section-title">Add new user to highlight</label>
             <div class="add-username-container">
-                <input type="text" class="input" placeholder="Username..." id="newUsername" style="flex-grow: 1;">
-                <select class="input" id="highlightType" style="flex-grow: 1;">
+                <input type="text" id="newUsername" placeholder="Username..." autocomplete="off" spellcheck="false">
+                <select id="highlightType">
                     <option value="whitelisted" selected>Whitelist</option>
                     <option value="blacklisted">Blacklist</option>
                 </select>
                 <button id="addUserButton">Add</button>
             </div>
-            <p id="new-username-error" class="help is-danger" style="display: none;">Please enter a valid username</p>
+            <p id="newUsernameError" class="error" hidden></p>
         </div>
 
-        <style>
-            .checkbox-container-user-types {
-                display: flex;
-                flex-direction: column;
-                margin-bottom: 1rem;
-                width: fit-content;
-                max-width: 100%;
-                gap: 0.25rem;
-            }
-
-            .checkbox-container-user-types-item {
-                display: inline-flex;
-                justify-content: space-between;
-                gap: 0.5rem;
-                width: 100%;
-            }
-
-            .checkbox-container-user-types-item > label {
-                display: inline-flex;
-                gap: 0.5rem;
-            }
-
-            .checkbox-container-user-types-item > label > span {
-                user-select: none;
-                -webkit-user-select: none;
-                -moz-user-select: none;
-                -ms-user-select: none;
-            }
-            
-            .checkbox-container-user-types-item *,
-            .listElement summary {
-                cursor: pointer;
-            }
-
-            .listElement {
-                border: 1px solid;
-                padding: 1rem;
-                background-color: #18181b;
-                border-radius: 5px;
-            }
-
-            .user-list-item {
-                font-size: 14px;
-            }
-
-            .user-list-item > button {
-                opacity: 0;
-            }
-
-            .user-list-item:hover > button {
-                opacity: 1;
-            }
-
-            .remove-user-button {
-                background-color: #6e0e0c;
-                color: #dfdcd7;
-                border: none;
-                border-radius: 5px;
-                padding: 0.5rem 1rem;
-                cursor: pointer;
-            }
-        </style>
-
-        <!-- checkbox pour activer l'highlight des messages verifiés -->
-        <div class="checkbox-container-user-types" id="highlightCheckboxes">
+        <div class="field">
+            <div class="badge-row">
+                <label for="whitelistColor" class="section-title" style="flex-grow: 1;">Whitelist color</label>
+                <input type="color" id="whitelistColor">
+            </div>
         </div>
 
-        <!-- whitelister user list (username + ["switch to blacklist"] + delete button)-->
-        <details id="whitelisterUserListDetails" class="listElement">
-            <summary style="font-weight: bold;"><span id="whitelisterUserListCount"></span> Whitelisted users</summary>
-            <div class="control" id="whitelisterUserList"></div>
+        <div class="field">
+            <span class="section-title">Badges seen in chat</span>
+            <div class="badge-list" id="badgeList"></div>
+            <p class="empty-hint" id="badgeHint" hidden>
+                No badge detected yet. Open a Twitch chat &mdash; badges appear here as
+                soon as someone wearing one sends a message.
+            </p>
+        </div>
+
+        <details id="whitelistDetails" class="list-element">
+            <summary><span id="whitelistCount">0</span> Whitelisted users</summary>
+            <div class="user-list" id="whitelistUsers"></div>
         </details>
 
-        <!-- blacklisted user list (username + ["switch to whitelist"] + delete button)-->
-        <details id="blacklistedUserListDetails" class="listElement">
-            <summary style="font-weight: bold;"><span id="blacklistedUserListCount"></span> Blacklisted users</summary>
-            <div class="control" id="blacklistedUserList"></div>
+        <details id="blacklistDetails" class="list-element">
+            <summary><span id="blacklistCount">0</span> Blacklisted users</summary>
+            <div class="user-list" id="blacklistUsers"></div>
         </details>
 
     </div>
-    
-</body>
 
-<script src="popup.js"></script>
+    <script src="../shared.js"></script>
+    <script src="popup.js"></script>
+</body>
 
 </html>
