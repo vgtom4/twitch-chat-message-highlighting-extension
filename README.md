@@ -36,26 +36,38 @@ libellé affiché est mis à jour, sans créer de doublon.
 Un badge appartient à l'une de trois portées, et sa clé est
 `${portée}|${libellé normalisé}` :
 
-| Portée | Contenu |
-| ------ | ------- |
-| `global` | badges communs à tout Twitch : vérifié, prime, modérateur, VIP… |
-| `<chaîne>` | badges propres à un streamer : paliers d'abonnement, badges custom |
-| `?` | chaîne non identifiable (certaines pages de VOD) |
+| Portée | Contenu | Y entre |
+| ------ | ------- | ------- |
+| `<chaîne>` | badges propres à un streamer : paliers d'abonnement, badges custom | automatiquement, à la découverte |
+| `event` | badges vus sur plus d'une chaîne : campagnes, drops, non triés | automatiquement |
+| `global` | badges permanents de Twitch : vérifié, prime, modérateur, VIP… | **manuellement uniquement** |
+| `?` | chaîne non identifiable (certaines pages de VOD) | automatiquement |
 
-La classification est déduite de l'observation, sans API : **un imageId vu sur
-deux chaînes différentes est forcément un badge commun** et se promeut en
-`global`, en fusionnant avec l'entrée globale existante s'il y en a une. Un
-badge qui n'apparaît que sur une chaîne lui reste attaché, avec sa propre
-couleur — l'« Abonné à 6 mois » de deux streamers sont deux entrées distinctes.
+La classification automatique est déduite de l'observation, sans API : **un
+imageId vu sur deux chaînes différentes n'est pas un badge de streamer** et passe
+en `event`. Un badge qui n'apparaît que sur une chaîne lui reste attaché, avec sa
+propre couleur — l'« Abonné à 6 mois » de deux streamers sont deux entrées
+distinctes.
 
-Un badge découvert alors que la chaîne est indéterminée prend la portée `?`,
-puis est rattaché à la chaîne dès qu'elle est identifiée (et non promu global).
+`global` est un classement **manuel** : rien n'y entre tout seul, et rien n'en
+sort tout seul. C'est là qu'on range les badges permanents, une fois pour toutes.
+Un badge déjà en `global` ou en `event` n'est plus reclassé par l'observation.
 
-Le popup range les badges en trois `<details>` : ceux de la chaîne affichée
-(déplié), les globaux, et les autres chaînes (replié, groupé par chaîne). Il
-obtient le nom de la chaîne en interrogeant le content script de l'onglet actif
-— pas via une valeur partagée dans le storage, qui serait fausse avec plusieurs
-onglets Twitch ouverts.
+Un badge découvert alors que la chaîne est indéterminée prend la portée `?`, puis
+est rattaché à la chaîne dès qu'elle est identifiée.
+
+Chaque badge mémorise son `origin`, la chaîne où il a été vu la première fois,
+pour pouvoir défaire un déplacement manuel.
+
+Le popup range les badges en quatre `<details>` : la chaîne affichée (déplié),
+`event`, `global`, et les autres chaînes (replié, groupé par chaîne). La colonne
+**Move** porte deux bascules, `E` et `G` : un clic déplace, recliquer sur la
+liste courante renvoie le badge à sa chaîne d'origine. Si une entrée existe déjà
+à destination sous le même libellé, les deux fusionnent.
+
+Le popup obtient le nom de la chaîne en interrogeant le content script de
+l'onglet actif — pas via une valeur partagée dans le storage, qui serait fausse
+avec plusieurs onglets Twitch ouverts.
 
 La chaîne est lue dans l'URL (`/<chaîne>`, `/popout/<chaîne>/chat`,
 `/moderator/<chaîne>`, `dashboard.twitch.tv/u/<chaîne>`), avec repli sur un lien
@@ -128,7 +140,10 @@ première lecture.
 - Un badge n'apparaît dans le popup qu'après avoir été vu au moins une fois.
 - Un badge commun à tout Twitch reste rattaché à la première chaîne où il a été
   vu tant qu'il n'a pas été rencontré sur une seconde. Il apparaît donc dans
-  "This channel" avant de basculer dans "Global badges".
+  "This channel" avant de basculer dans "Event badges", d'où on le promeut
+  manuellement en "Global badges" s'il est permanent.
+- Un badge migré depuis la v1/v2 n'a pas de chaîne d'origine connue : annuler
+  son déplacement le renvoie en portée `?`, donc dans "Other channels".
 - `popup/bulma.min.css` et `twitch_colors.css` ne sont plus référencés.
 
 <!-- Keep -->

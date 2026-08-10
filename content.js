@@ -135,6 +135,9 @@
         const entry = {
             key: TCH.makeKey(scope, label),
             scope,
+            // Chaîne de découverte, conservée pour pouvoir défaire un
+            // déplacement manuel vers Global ou Event.
+            origin: scope,
             label,
             color: TCH.pickColor(settings.badges.length),
             // Inactif par défaut : découvrir un badge ne doit pas colorer le
@@ -205,11 +208,14 @@
                     // Badge vu d'abord sur une page sans chaîne identifiable :
                     // on le rattache maintenant qu'on la connaît.
                     entry = moveScope(entry, channel);
-                } else if (entry.scope !== TCH.SCOPE_GLOBAL) {
-                    // Le même imageId sur deux chaînes : c'est un badge Twitch
-                    // commun, pas un badge de chaîne.
-                    entry = moveScope(entry, TCH.SCOPE_GLOBAL);
+                    entry.origin = entry.scope;
+                } else if (TCH.isChannelScope(entry.scope)) {
+                    // Le même imageId sur deux chaînes : ce n'est pas un badge
+                    // propre à un streamer. Il part en Event, jamais en Global —
+                    // ce dernier reste un classement manuel.
+                    entry = moveScope(entry, TCH.SCOPE_EVENT);
                 }
+                // Déjà en Global ou en Event : on n'y touche plus.
             }
 
             if (ref.key !== entry.key) {
@@ -222,12 +228,13 @@
         if (!TCH.normalizeLabel(label)) return null;
 
         const scope = TCH.isChannelScope(channel) ? channel : TCH.SCOPE_UNKNOWN;
-        // Un badge déjà connu comme commun à tout Twitch le reste, même vu pour
-        // la première fois sur cette chaîne : sans ça, des réglages migrés
-        // depuis la v1 seraient dupliqués en badge de chaîne à la première
-        // lecture, et leur couleur perdue.
+        // Un badge déjà rangé dans Global ou Event sous ce libellé y reste, même
+        // vu pour la première fois sur cette chaîne : sans ça, un classement
+        // manuel (ou des réglages migrés depuis la v1) serait dupliqué en badge
+        // de chaîne à la première lecture, et sa couleur perdue.
         entry =
             badgeByKey.get(TCH.makeKey(TCH.SCOPE_GLOBAL, label)) ||
+            badgeByKey.get(TCH.makeKey(TCH.SCOPE_EVENT, label)) ||
             badgeByKey.get(TCH.makeKey(scope, label)) ||
             createBadge(scope, label);
         badgeIndex[imageId] = { key: entry.key, scope: entry.scope };

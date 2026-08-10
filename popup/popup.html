@@ -65,12 +65,32 @@
                     <tr>
                         <th class="col-name">Badge</th>
                         <th class="col-mode">Mode</th>
+                        <th class="col-move">Move</th>
                         <th class="col-color">Color</th>
                     </tr>
                 </thead>
                 <tbody id="channelBadges"></tbody>
             </table>
             <p class="empty-hint" id="channelBadgesHint" hidden></p>
+        </details>
+
+        <details id="eventBadgesDetails" class="list-element">
+            <summary><span id="eventBadgesCount">0</span> Event badges</summary>
+            <table class="rules-table">
+                <thead>
+                    <tr>
+                        <th class="col-name">Badge</th>
+                        <th class="col-mode">Mode</th>
+                        <th class="col-move">Move</th>
+                        <th class="col-color">Color</th>
+                    </tr>
+                </thead>
+                <tbody id="eventBadges"></tbody>
+            </table>
+            <p class="empty-hint" id="eventBadgesHint" hidden>
+                Badges seen on more than one channel land here. Use
+                <strong>G</strong> to promote the permanent ones to Global.
+            </p>
         </details>
 
         <details id="globalBadgesDetails" class="list-element">
@@ -80,14 +100,15 @@
                     <tr>
                         <th class="col-name">Badge</th>
                         <th class="col-mode">Mode</th>
+                        <th class="col-move">Move</th>
                         <th class="col-color">Color</th>
                     </tr>
                 </thead>
                 <tbody id="globalBadges"></tbody>
             </table>
             <p class="empty-hint" id="globalBadgesHint" hidden>
-                None yet. A badge is recognised as global once it shows up on a
-                second channel.
+                Empty, and nothing lands here on its own. Move the permanent
+                Twitch badges here yourself with <strong>G</strong>.
             </p>
         </details>
 
@@ -98,6 +119,7 @@
                     <tr>
                         <th class="col-name">Badge</th>
                         <th class="col-mode">Mode</th>
+                        <th class="col-move">Move</th>
                         <th class="col-color">Color</th>
                     </tr>
                 </thead>

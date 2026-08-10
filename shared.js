@@ -6,7 +6,7 @@
 globalThis.TCH = (() => {
     "use strict";
 
-    const VERSION = 4;
+    const VERSION = 5;
 
     // Un badge comme un utilisateur peut être ignoré, colorer la ligne, ou au
     // contraire empêcher toute coloration. Le troisième état remplace les
@@ -21,9 +21,16 @@ globalThis.TCH = (() => {
     // Ancien format v1, lu une seule fois pour la migration.
     const LEGACY_KEY = "twitchUsersHighlighter";
 
-    // Portée d'un badge : commun à tout Twitch, propre à une chaîne, ou
-    // indéterminé (chaîne non identifiable, par exemple sur certaines VOD).
+    // Portée d'un badge.
+    // - `global` : badge permanent de Twitch. Classement **manuel uniquement** —
+    //   rien n'y entre tout seul, et rien n'en sort tout seul.
+    // - `event` : vu sur plus d'une chaîne sans avoir été classé à la main.
+    //   C'est là que va la promotion automatique : campagnes, drops, badges
+    //   temporaires, et tout ce qui n'est pas encore trié.
+    // - `<chaîne>` : vu sur une seule chaîne (abonnement, badge custom).
+    // - `?` : chaîne non identifiable (certaines pages de VOD).
     const SCOPE_GLOBAL = "global";
+    const SCOPE_EVENT = "event";
     const SCOPE_UNKNOWN = "?";
 
     const BADGE_ID_RE = /\/badges\/v1\/([^/?#]+)/;
@@ -82,8 +89,17 @@ globalThis.TCH = (() => {
 
     const keyScope = (key) => String(key).split("|", 1)[0];
 
+    // Vrai seulement pour le nom d'une chaîne réelle.
     const isChannelScope = (scope) =>
-        scope !== SCOPE_GLOBAL && scope !== SCOPE_UNKNOWN;
+        Boolean(scope) &&
+        scope !== SCOPE_GLOBAL &&
+        scope !== SCOPE_EVENT &&
+        scope !== SCOPE_UNKNOWN;
+
+    // Portée vers laquelle un badge retourne quand on annule un déplacement
+    // manuel : sa chaîne d'origine si on la connaît encore.
+    const homeScope = (badge) =>
+        isChannelScope(badge.origin) ? badge.origin : SCOPE_UNKNOWN;
 
     const makeUser = (login, mode, color) => ({ login, mode, color: color || null });
 
@@ -114,6 +130,7 @@ globalThis.TCH = (() => {
                 .map((badge, index) => ({
                     key: makeKey(SCOPE_GLOBAL, badge.label),
                     scope: SCOPE_GLOBAL,
+                    origin: SCOPE_UNKNOWN,
                     label: badge.label,
                     color: badge.color || pickColor(index),
                     mode: badge.isEnabled === false ? MODE.OFF : MODE.WHITE,
@@ -138,6 +155,9 @@ globalThis.TCH = (() => {
             badges: (settings.badges || []).map((badge) => ({
                 key: badge.scope ? badge.key : makeKey(SCOPE_GLOBAL, badge.label || badge.key),
                 scope: badge.scope || SCOPE_GLOBAL,
+                // v4 ne mémorisait pas la chaîne de découverte : la portée
+                // courante en est la meilleure approximation.
+                origin: badge.origin || badge.scope || SCOPE_UNKNOWN,
                 label: badge.label,
                 color: badge.color,
                 mode: badge.mode || (badge.isEnabled ? MODE.WHITE : MODE.OFF),
@@ -232,9 +252,11 @@ globalThis.TCH = (() => {
         INDEX_KEY,
         LEGACY_KEY,
         SCOPE_GLOBAL,
+        SCOPE_EVENT,
         SCOPE_UNKNOWN,
         DEFAULT_SETTINGS,
         AUTO_COLORS,
+        homeScope,
         normalizeLabel,
         isValidLogin,
         extractBadgeId,

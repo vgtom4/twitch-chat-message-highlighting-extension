@@ -21,6 +21,9 @@
         channelBadges: document.getElementById("channelBadges"),
         channelBadgesTitle: document.getElementById("channelBadgesTitle"),
         channelBadgesHint: document.getElementById("channelBadgesHint"),
+        eventBadges: document.getElementById("eventBadges"),
+        eventBadgesCount: document.getElementById("eventBadgesCount"),
+        eventBadgesHint: document.getElementById("eventBadgesHint"),
         globalBadges: document.getElementById("globalBadges"),
         globalBadgesCount: document.getElementById("globalBadgesCount"),
         globalBadgesHint: document.getElementById("globalBadgesHint"),
@@ -155,6 +158,76 @@
     // priorité des couleurs, décidée par l'ordre des badges dans le DOM.
     const byLabel = (a, b) => (a.label || a.key).localeCompare(b.label || b.key);
 
+    // Déplacer un badge revient à changer sa clé : elle contient la portée. On
+    // reporte le changement sur l'index des imageIds, sinon le content script
+    // ne retrouverait plus l'entrée et en recréerait une.
+    async function moveBadge(badge, scope) {
+        const previousKey = badge.key;
+        const target = badge.scope === scope ? TCH.homeScope(badge) : scope;
+        if (target === badge.scope) return;
+
+        const nextKey = TCH.makeKey(target, badge.label || badge.key);
+        const collision = settings.badges.find(
+            (other) => other !== badge && other.key === nextKey
+        );
+
+        // Une entrée existe déjà à destination : les deux fusionnent.
+        if (collision) {
+            if (collision.mode === MODE.OFF) collision.mode = badge.mode;
+            settings.badges = settings.badges.filter((other) => other !== badge);
+        } else {
+            badge.key = nextKey;
+            badge.scope = target;
+        }
+
+        const winnerKey = collision ? collision.key : nextKey;
+        const winnerScope = collision ? collision.scope : target;
+
+        const raw = await chrome.storage.local.get(TCH.INDEX_KEY);
+        const index = TCH.readIndex(raw[TCH.INDEX_KEY]);
+        let touched = false;
+        for (const [imageId, ref] of Object.entries(index)) {
+            if (ref.key !== previousKey) continue;
+            index[imageId] = { key: winnerKey, scope: winnerScope };
+            touched = true;
+        }
+
+        persist();
+        if (touched) await TCH.saveBadgeIndex(index);
+        else render();
+    }
+
+    function moveCell(badge) {
+        const cell = document.createElement("td");
+        cell.className = "col-move";
+
+        const group = document.createElement("div");
+        group.className = "move-group";
+
+        for (const [scope, symbol, title] of [
+            [TCH.SCOPE_EVENT, "E", "Move to Event badges"],
+            [TCH.SCOPE_GLOBAL, "G", "Move to Global badges"],
+        ]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `move-button move-${scope}`;
+            button.textContent = symbol;
+            const here = badge.scope === scope;
+            const home = TCH.homeScope(badge);
+            button.setAttribute("aria-pressed", String(here));
+            button.title = here
+                ? home === TCH.SCOPE_UNKNOWN
+                    ? "Move back out of this list"
+                    : `Move back to ${home}`
+                : title;
+            button.addEventListener("click", () => moveBadge(badge, scope));
+            group.appendChild(button);
+        }
+
+        cell.appendChild(group);
+        return cell;
+    }
+
     function badgeRow(badge) {
         const row = document.createElement("tr");
 
@@ -184,6 +257,8 @@
             })
         );
 
+        row.appendChild(moveCell(badge));
+
         row.appendChild(
             colorCell(badge.color, badge.mode !== MODE.BLACK, (color) => {
                 badge.color = color;
@@ -202,11 +277,13 @@
     // Trois groupes : la chaîne affichée, les badges communs à tout Twitch, et
     // les autres chaînes — repliées pour ne pas encombrer, mais accessibles.
     function renderBadges() {
-        const groups = { channel: [], global: [], others: new Map() };
+        const groups = { channel: [], global: [], event: [], others: new Map() };
 
         for (const badge of settings.badges) {
             if (badge.scope === TCH.SCOPE_GLOBAL) {
                 groups.global.push(badge);
+            } else if (badge.scope === TCH.SCOPE_EVENT) {
+                groups.event.push(badge);
             } else if (currentChannel && badge.scope === currentChannel) {
                 groups.channel.push(badge);
             } else {
@@ -233,6 +310,10 @@
             els.channelBadgesHint.hidden = true;
         }
 
+        els.eventBadgesCount.textContent = groups.event.length;
+        els.eventBadgesHint.hidden = groups.event.length > 0;
+        fill(els.eventBadges, groups.event);
+
         els.globalBadgesCount.textContent = groups.global.length;
         els.globalBadgesHint.hidden = groups.global.length > 0;
         fill(els.globalBadges, groups.global);
@@ -253,7 +334,7 @@
             // lignes de badge qui la suivent.
             headingRow.className = "scope-row";
             const heading = document.createElement("td");
-            heading.colSpan = 3;
+            heading.colSpan = 4;
             heading.className = "scope-heading";
             heading.textContent =
                 scope === TCH.SCOPE_UNKNOWN ? "Unidentified channel" : scope;

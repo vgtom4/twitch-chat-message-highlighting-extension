@@ -231,10 +231,11 @@ button:hover {
 }
 
 .col-mode,
+.col-move,
 .col-color,
 .col-remove {
     white-space: nowrap;
-    padding-left: 0.5rem !important;
+    padding-left: 0.4rem !important;
 }
 
 .col-color,
@@ -289,6 +290,45 @@ button:hover {
 
 .mode-black[aria-pressed="true"]:hover {
     background-color: #a81714;
+}
+
+/* Déplacement vers Event / Global. Même logique que le mode : le bouton de la
+   liste courante est enfoncé, et recliquer dessus renvoie le badge d'où il
+   vient. Global n'est jamais atteint autrement qu'ici. */
+.move-group {
+    display: inline-flex;
+    border: 1px solid #36393f;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.move-button {
+    background-color: transparent;
+    color: #7d7d85;
+    border: none;
+    border-radius: 0;
+    padding: 0.15rem 0.4rem;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.move-button + .move-button {
+    border-left: 1px solid #36393f;
+}
+
+.move-button:hover {
+    background-color: #2a2c31;
+    color: #efeff1;
+}
+
+.move-button[aria-pressed="true"] {
+    background-color: #3a3a52;
+    color: #efeff1;
+}
+
+.move-button[aria-pressed="true"]:hover {
+    background-color: #4a4a68;
 }
 
 .remove-button {
