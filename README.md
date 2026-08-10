@@ -144,6 +144,13 @@ première lecture.
   manuellement en "Global badges" s'il est permanent.
 - Un badge migré depuis la v1/v2 n'a pas de chaîne d'origine connue : annuler
   son déplacement le renvoie en portée `?`, donc dans "Other channels".
+- Le popup et les onglets écrivent la même clé de storage sans verrou : si une
+  découverte de badge tombe exactement pendant une action du popup, le dernier
+  écrivain gagne. Un badge découvert et perdu ainsi est redécouvert au message
+  suivant, et il n'était pas encore configuré — l'état converge.
+  **Corollaire pour le code du popup** : aucun `await` ne doit séparer une
+  mutation de `settings` de son enregistrement, sinon `onChanged` remplace
+  `settings` entre les deux et le changement est perdu.
 - `popup/bulma.min.css` et `twitch_colors.css` ne sont plus référencés.
 
 <!-- Keep -->

@@ -35,10 +35,25 @@
     const { MODE } = TCH;
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
+    // Gardé en mémoire, jamais relu au moment d'agir : une lecture asynchrone au
+    // milieu d'une modification laisse `onChanged` remplacer `settings` entre la
+    // mutation et l'écriture, et le changement est perdu.
+    let badgeIndex = {};
     let badgeSamples = new Map();
     let currentChannel = null;
 
     const persist = () => TCH.saveSettings(settings);
+
+    function setBadgeIndex(index) {
+        badgeIndex = index;
+        badgeSamples = TCH.badgeSamples(index);
+    }
+
+    // Les lignes déjà affichées capturent des objets de `settings`, qui est
+    // remplacé à chaque `onChanged`. On repart donc de la clé pour agir sur
+    // l'objet vivant, jamais sur celui capturé par la closure.
+    const liveBadge = (key) => settings.badges.find((badge) => badge.key === key);
+    const liveUser = (login) => settings.users.find((user) => user.login === login);
 
     function showError(message) {
         els.newUsernameError.textContent = message;
@@ -118,7 +133,9 @@
 
                 row.appendChild(
                     modeCell(user, (mode) => {
-                        user.mode = mode;
+                        const live = liveUser(user.login);
+                        if (!live) return;
+                        live.mode = mode;
                         persist();
                         renderUsers();
                     })
@@ -126,7 +143,9 @@
 
                 row.appendChild(
                     colorCell(user.color || settings.defaultColor, user.mode === MODE.WHITE, (color) => {
-                        user.color = color;
+                        const live = liveUser(user.login);
+                        if (!live) return;
+                        live.color = color;
                         persist();
                     })
                 );
@@ -139,7 +158,7 @@
                 remove.textContent = "✕";
                 remove.title = `Remove ${user.login}`;
                 remove.addEventListener("click", () => {
-                    settings.users = settings.users.filter((u) => u !== user);
+                    settings.users = settings.users.filter((u) => u.login !== user.login);
                     persist();
                     renderUsers();
                 });
@@ -161,8 +180,13 @@
     // Déplacer un badge revient à changer sa clé : elle contient la portée. On
     // reporte le changement sur l'index des imageIds, sinon le content script
     // ne retrouverait plus l'entrée et en recréerait une.
-    async function moveBadge(badge, scope) {
-        const previousKey = badge.key;
+    //
+    // Tout est synchrone jusqu'aux écritures : aucun `await` ne doit séparer la
+    // mutation de `settings` de son enregistrement.
+    function moveBadge(key, scope) {
+        const badge = liveBadge(key);
+        if (!badge) return;
+
         const target = badge.scope === scope ? TCH.homeScope(badge) : scope;
         if (target === badge.scope) return;
 
@@ -180,21 +204,17 @@
             badge.scope = target;
         }
 
-        const winnerKey = collision ? collision.key : nextKey;
-        const winnerScope = collision ? collision.scope : target;
-
-        const raw = await chrome.storage.local.get(TCH.INDEX_KEY);
-        const index = TCH.readIndex(raw[TCH.INDEX_KEY]);
+        const winner = collision || badge;
         let touched = false;
-        for (const [imageId, ref] of Object.entries(index)) {
-            if (ref.key !== previousKey) continue;
-            index[imageId] = { key: winnerKey, scope: winnerScope };
+        for (const [imageId, ref] of Object.entries(badgeIndex)) {
+            if (ref.key !== key) continue;
+            badgeIndex[imageId] = { key: winner.key, scope: winner.scope };
             touched = true;
         }
 
         persist();
-        if (touched) await TCH.saveBadgeIndex(index);
-        else render();
+        if (touched) TCH.saveBadgeIndex(badgeIndex);
+        render();
     }
 
     function moveCell(badge) {
@@ -220,7 +240,7 @@
                     ? "Move back out of this list"
                     : `Move back to ${home}`
                 : title;
-            button.addEventListener("click", () => moveBadge(badge, scope));
+            button.addEventListener("click", () => moveBadge(badge.key, scope));
             group.appendChild(button);
         }
 
@@ -251,7 +271,9 @@
 
         row.appendChild(
             modeCell(badge, (mode) => {
-                badge.mode = mode;
+                const live = liveBadge(badge.key);
+                if (!live) return;
+                live.mode = mode;
                 persist();
                 renderBadges();
             })
@@ -261,7 +283,9 @@
 
         row.appendChild(
             colorCell(badge.color, badge.mode !== MODE.BLACK, (color) => {
-                badge.color = color;
+                const live = liveBadge(badge.key);
+                if (!live) return;
+                live.color = color;
                 persist();
             })
         );
@@ -413,7 +437,7 @@
             render();
         }
         if (area === "local" && changes[TCH.INDEX_KEY]) {
-            badgeSamples = TCH.badgeSamples(TCH.readIndex(changes[TCH.INDEX_KEY].newValue));
+            setBadgeIndex(TCH.readIndex(changes[TCH.INDEX_KEY].newValue));
             renderBadges();
         }
     });
@@ -438,7 +462,7 @@
     async function init() {
         const [state, channel] = await Promise.all([TCH.loadState(), detectChannel()]);
         settings = state.settings;
-        badgeSamples = TCH.badgeSamples(state.badgeIndex);
+        setBadgeIndex(state.badgeIndex);
         currentChannel = channel;
         render();
     }
