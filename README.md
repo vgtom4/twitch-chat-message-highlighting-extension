@@ -84,6 +84,10 @@ Le popup range les badges en quatre `<details>` : la chaîne affichée (déplié
 liste courante renvoie le badge à sa chaîne d'origine. Si une entrée existe déjà
 à destination sous le même libellé, les deux fusionnent.
 
+Au survol d'une ligne, l'icône du badge laisse place à une croix qui supprime la
+règle — le badge redevient alors une simple proposition dans « Seen in this
+chat ». La croix est là même sans icône, pour les règles migrées.
+
 Le popup obtient le nom de la chaîne **et les badges croisés dans ce chat** en
 interrogeant le content script de l'onglet actif (message `tch:getState`) — pas
 via une valeur partagée dans le storage, qui serait fausse avec plusieurs onglets

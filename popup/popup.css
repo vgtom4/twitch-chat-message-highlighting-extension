@@ -336,11 +336,47 @@ button:hover {
     white-space: nowrap;
 }
 
-.col-name img {
+/* Emplacement de taille fixe : l'icône du badge, remplacée au survol de la
+   ligne par une croix qui supprime la règle. */
+.badge-icon {
+    position: relative;
+    display: inline-block;
     width: 18px;
     height: 18px;
     vertical-align: -4px;
     margin-right: 0.35rem;
+}
+
+.badge-icon img {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+.badge-remove {
+    position: absolute;
+    inset: 0;
+    display: none;
+    padding: 0;
+    border-radius: 3px;
+    background-color: #6e0e0c;
+    color: #fff;
+    font-size: 10px;
+    line-height: 18px;
+    text-align: center;
+}
+
+.badge-remove:hover {
+    background-color: #8c1210;
+}
+
+tr:hover > .col-name > .badge-icon > img {
+    visibility: hidden;
+}
+
+tr:hover > .col-name > .badge-icon > .badge-remove,
+.badge-remove:focus-visible {
+    display: block;
 }
 
 .col-mode,

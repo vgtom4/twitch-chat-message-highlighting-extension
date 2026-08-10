@@ -303,13 +303,32 @@
         const name = document.createElement("td");
         name.className = "col-name";
 
+        // L'icône laisse place à une croix au survol de la ligne : la place est
+        // comptée, et supprimer une règle reste rare. Elle est aussi présente
+        // sans icône, pour les règles migrées qui n'ont pas encore d'imageId.
+        const slot = document.createElement("span");
+        slot.className = "badge-icon";
+
         const icon = TCH.badgeIcon(badge);
         if (icon) {
             const img = document.createElement("img");
             img.src = icon;
             img.alt = "";
-            name.appendChild(img);
+            slot.appendChild(img);
         }
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "badge-remove";
+        remove.textContent = "✕";
+        remove.title = `Remove the rule for ${badge.label || badge.key}`;
+        remove.addEventListener("click", () => {
+            settings.badges = settings.badges.filter((other) => other.key !== badge.key);
+            persist();
+            render();
+        });
+        slot.appendChild(remove);
+        name.appendChild(slot);
 
         const text = document.createElement("span");
         text.className = "badge-label";
