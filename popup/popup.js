@@ -12,8 +12,15 @@
         addUserButton: document.getElementById("addUserButton"),
         newUsernameError: document.getElementById("newUsernameError"),
         whitelistColor: document.getElementById("whitelistColor"),
-        badgeList: document.getElementById("badgeList"),
-        badgeHint: document.getElementById("badgeHint"),
+        channelBadges: document.getElementById("channelBadges"),
+        channelBadgesTitle: document.getElementById("channelBadgesTitle"),
+        channelBadgesHint: document.getElementById("channelBadgesHint"),
+        globalBadges: document.getElementById("globalBadges"),
+        globalBadgesCount: document.getElementById("globalBadgesCount"),
+        globalBadgesHint: document.getElementById("globalBadgesHint"),
+        otherBadges: document.getElementById("otherBadges"),
+        otherBadgesCount: document.getElementById("otherBadgesCount"),
+        otherBadgesDetails: document.getElementById("otherBadgesDetails"),
         whitelistDetails: document.getElementById("whitelistDetails"),
         blacklistDetails: document.getElementById("blacklistDetails"),
         whitelistCount: document.getElementById("whitelistCount"),
@@ -24,6 +31,7 @@
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
     let badgeSamples = new Map();
+    let currentChannel = null;
 
     const persist = () => TCH.saveSettings(settings);
 
@@ -46,59 +54,122 @@
         renderUserList("blacklisted", els.blacklistUsers, els.blacklistCount);
     }
 
-    function renderBadges() {
-        els.badgeList.textContent = "";
-        els.badgeHint.hidden = settings.badges.length > 0;
+    // Twitch donne un libellé distinct à chaque palier d'abonnement ("Abonné à
+    // 6 mois", "Abonné à 12 mois"...), donc un badge par palier. Le tri
+    // alphabétique les regroupe visuellement. Il n'a aucun effet sur la
+    // priorité des couleurs, décidée par l'ordre des badges dans le DOM.
+    const byLabel = (a, b) =>
+        (a.label || a.key).localeCompare(b.label || b.key);
 
-        // Twitch donne un libellé distinct à chaque palier d'abonnement
-        // ("Abonné à 6 mois", "Abonné à 12 mois"...), donc un badge par palier.
-        // Le tri alphabétique les regroupe visuellement. Il n'a aucun effet sur
-        // la priorité des couleurs, décidée par l'ordre des badges dans le DOM.
-        const sorted = [...settings.badges].sort((a, b) =>
-            (a.label || a.key).localeCompare(b.label || b.key)
-        );
+    function badgeRow(badge) {
+        const row = document.createElement("div");
+        row.className = "badge-row";
 
-        sorted.forEach((badge) => {
-            const row = document.createElement("div");
-            row.className = "badge-row";
+        const label = document.createElement("label");
 
-            const label = document.createElement("label");
-
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.checked = badge.isEnabled;
-            checkbox.addEventListener("change", () => {
-                badge.isEnabled = checkbox.checked;
-                persist();
-            });
-
-            const sample = badgeSamples.get(badge.key);
-            if (sample) {
-                const img = document.createElement("img");
-                img.src = TCH.badgeImageUrl(sample);
-                img.alt = "";
-                label.appendChild(img);
-            }
-
-            const text = document.createElement("span");
-            text.className = "badge-label";
-            text.textContent = badge.label || badge.key;
-            text.title = badge.label || badge.key;
-
-            const color = document.createElement("input");
-            color.type = "color";
-            color.value = badge.color;
-            color.addEventListener("change", () => {
-                badge.color = color.value;
-                persist();
-            });
-
-            label.insertBefore(checkbox, label.firstChild);
-            label.appendChild(text);
-            row.appendChild(label);
-            row.appendChild(color);
-            els.badgeList.appendChild(row);
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = badge.isEnabled;
+        checkbox.addEventListener("change", () => {
+            badge.isEnabled = checkbox.checked;
+            persist();
         });
+        label.appendChild(checkbox);
+
+        const sample = badgeSamples.get(badge.key);
+        if (sample) {
+            const img = document.createElement("img");
+            img.src = TCH.badgeImageUrl(sample);
+            img.alt = "";
+            label.appendChild(img);
+        }
+
+        const text = document.createElement("span");
+        text.className = "badge-label";
+        text.textContent = badge.label || badge.key;
+        text.title = badge.label || badge.key;
+        label.appendChild(text);
+
+        const color = document.createElement("input");
+        color.type = "color";
+        color.value = badge.color;
+        color.addEventListener("change", () => {
+            badge.color = color.value;
+            persist();
+        });
+
+        row.appendChild(label);
+        row.appendChild(color);
+        return row;
+    }
+
+    function fill(containerEl, badges) {
+        containerEl.textContent = "";
+        badges.sort(byLabel).forEach((badge) => containerEl.appendChild(badgeRow(badge)));
+    }
+
+    // Trois groupes : la chaîne affichée, les badges communs à tout Twitch, et
+    // les autres chaînes — repliées pour ne pas encombrer, mais accessibles.
+    function renderBadges() {
+        const groups = { channel: [], global: [], others: new Map() };
+
+        for (const badge of settings.badges) {
+            if (badge.scope === TCH.SCOPE_GLOBAL) {
+                groups.global.push(badge);
+            } else if (currentChannel && badge.scope === currentChannel) {
+                groups.channel.push(badge);
+            } else {
+                const scope = badge.scope || TCH.SCOPE_UNKNOWN;
+                if (!groups.others.has(scope)) groups.others.set(scope, []);
+                groups.others.get(scope).push(badge);
+            }
+        }
+
+        els.channelBadgesTitle.textContent = currentChannel
+            ? `${groups.channel.length} badges — ${currentChannel}`
+            : "This channel";
+        fill(els.channelBadges, groups.channel);
+
+        if (!currentChannel) {
+            els.channelBadgesHint.textContent =
+                "Open a Twitch channel to see the badges specific to it.";
+            els.channelBadgesHint.hidden = false;
+        } else if (!groups.channel.length) {
+            els.channelBadgesHint.textContent =
+                "No channel-specific badge seen yet. They appear as soon as a subscriber or a holder of a custom badge posts.";
+            els.channelBadgesHint.hidden = false;
+        } else {
+            els.channelBadgesHint.hidden = true;
+        }
+
+        els.globalBadgesCount.textContent = groups.global.length;
+        els.globalBadgesHint.hidden = groups.global.length > 0;
+        fill(els.globalBadges, groups.global);
+
+        renderOtherChannels(groups.others);
+    }
+
+    function renderOtherChannels(others) {
+        els.otherBadges.textContent = "";
+        let total = 0;
+
+        [...others.keys()].sort().forEach((scope) => {
+            const badges = others.get(scope);
+            total += badges.length;
+
+            const heading = document.createElement("div");
+            heading.className = "scope-heading";
+            heading.textContent =
+                scope === TCH.SCOPE_UNKNOWN ? "Unidentified channel" : scope;
+            els.otherBadges.appendChild(heading);
+
+            badges.sort(byLabel).forEach((badge) => {
+                els.otherBadges.appendChild(badgeRow(badge));
+            });
+        });
+
+        els.otherBadgesCount.textContent = total;
+        els.otherBadgesDetails.hidden = total === 0;
     }
 
     function renderUserList(list, containerEl, countEl) {
@@ -182,15 +253,33 @@
             render();
         }
         if (area === "local" && changes[TCH.INDEX_KEY]) {
-            badgeSamples = TCH.badgeSamples(changes[TCH.INDEX_KEY].newValue || {});
+            badgeSamples = TCH.badgeSamples(TCH.readIndex(changes[TCH.INDEX_KEY].newValue));
             renderBadges();
         }
     });
 
+    // On interroge le content script de l'onglet que le popup recouvre plutôt
+    // que de lire une valeur partagée dans le storage : avec plusieurs onglets
+    // Twitch ouverts, seul l'onglet actif donne la bonne réponse. Il connaît
+    // aussi la chaîne des pages de VOD, que l'URL ne porte pas.
+    async function detectChannel() {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) return null;
+        try {
+            const response = await chrome.tabs.sendMessage(tab.id, { type: "tch:getChannel" });
+            const channel = response?.channel;
+            return channel && channel !== TCH.SCOPE_UNKNOWN ? channel : null;
+        } catch {
+            // Onglet sans content script (page hors Twitch).
+            return null;
+        }
+    }
+
     async function init() {
-        const state = await TCH.loadState();
+        const [state, channel] = await Promise.all([TCH.loadState(), detectChannel()]);
         settings = state.settings;
         badgeSamples = TCH.badgeSamples(state.badgeIndex);
+        currentChannel = channel;
         render();
     }
 

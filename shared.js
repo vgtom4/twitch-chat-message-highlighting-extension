@@ -6,13 +6,20 @@
 globalThis.TCH = (() => {
     "use strict";
 
+    const VERSION = 3;
+
     // Réglages utilisateur : synchronisés entre les machines, volume faible.
     const SETTINGS_KEY = "tchSettings";
-    // Correspondance imageId de badge -> clé de badge. Cache local, croît avec
-    // les chaînes visitées (paliers d'abonnement, badges custom).
+    // Correspondance imageId de badge -> { key, scope }. Cache local, croît
+    // avec les chaînes visitées (paliers d'abonnement, badges custom).
     const INDEX_KEY = "tchBadgeIndex";
     // Ancien format v1, lu une seule fois pour la migration.
     const LEGACY_KEY = "twitchUsersHighlighter";
+
+    // Portée d'un badge : commun à tout Twitch, propre à une chaîne, ou
+    // indéterminé (chaîne non identifiable, par exemple sur certaines VOD).
+    const SCOPE_GLOBAL = "global";
+    const SCOPE_UNKNOWN = "?";
 
     const BADGE_ID_RE = /\/badges\/v1\/([^/?#]+)/;
     const BADGE_CDN = "https://static-cdn.jtvnw.net/badges/v1";
@@ -31,20 +38,20 @@ globalThis.TCH = (() => {
     ];
 
     const DEFAULT_SETTINGS = {
-        version: 2,
+        version: VERSION,
         enabled: true,
         whitelistColor: "#0c6bb8",
         whitelisted: [],
         blacklisted: [],
-        // [{ key, label, color, isEnabled }]
-        // `key` est figée à la création (label normalisé du premier badge vu),
-        // `label` suit la langue de l'interface Twitch.
+        // [{ key, scope, label, color, isEnabled }]
+        // `key` = `${scope}|${label normalisé}`, figée tant que la portée ne
+        // change pas. `label` suit la langue de l'interface Twitch.
         badges: [],
     };
 
-    // L'`alt` d'un badge dépend de la langue de l'interface. On s'en sert comme
-    // clé de regroupement (tous les paliers d'abonnement partagent le même alt),
-    // jamais comme critère de correspondance : celle-ci passe par l'imageId.
+    // L'`alt` d'un badge dépend de la langue de l'interface. On s'en sert pour
+    // nommer et regrouper, jamais pour la correspondance : celle-ci passe par
+    // l'imageId, qui est stable.
     const normalizeLabel = (label) =>
         (label || "").trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -58,6 +65,16 @@ globalThis.TCH = (() => {
     const badgeImageUrl = (imageId) => `${BADGE_CDN}/${imageId}/1`;
 
     const pickColor = (index) => AUTO_COLORS[index % AUTO_COLORS.length];
+
+    // La portée fait partie de l'identité du badge : le badge "Abonné à 6 mois"
+    // de deux chaînes différentes a deux imageIds différents et doit rester
+    // deux entrées distinctes, colorables séparément.
+    const makeKey = (scope, label) => `${scope}|${normalizeLabel(label)}`;
+
+    const keyScope = (key) => String(key).split("|", 1)[0];
+
+    const isChannelScope = (scope) =>
+        scope !== SCOPE_GLOBAL && scope !== SCOPE_UNKNOWN;
 
     // v1 stockait tout dans chrome.storage.local sous une seule clé, avec des
     // badges codés en dur reconnus par leur `alt`. On conserve les listes
@@ -78,10 +95,13 @@ globalThis.TCH = (() => {
             settings.blacklisted = legacy.blacklisted.filter(isValidLogin);
         }
         if (Array.isArray(legacy.highlightedBadges)) {
+            // Les badges de la v1 ("Vérifié", "Diffuseur") sont des badges
+            // Twitch communs à toutes les chaînes.
             settings.badges = legacy.highlightedBadges
                 .filter((badge) => badge && badge.label)
                 .map((badge, index) => ({
-                    key: normalizeLabel(badge.label),
+                    key: makeKey(SCOPE_GLOBAL, badge.label),
+                    scope: SCOPE_GLOBAL,
                     label: badge.label,
                     color: badge.color || pickColor(index),
                     isEnabled: badge.isEnabled !== false,
@@ -91,22 +111,40 @@ globalThis.TCH = (() => {
         return settings;
     }
 
-    // Renvoie { settings, badgeIndex }. Migre depuis v1 au premier appel si
-    // aucun réglage v2 n'existe encore.
+    // v2 ne connaissait pas la notion de portée : ses badges n'étaient pas
+    // rattachés à une chaîne. On les considère globaux ; ceux qui étaient en
+    // réalité propres à une chaîne se re-scinderont à la prochaine visite.
+    function upgradeSettings(settings) {
+        if (settings.version === VERSION) return settings;
+
+        return {
+            ...settings,
+            version: VERSION,
+            badges: (settings.badges || []).map((badge) => ({
+                ...badge,
+                scope: badge.scope || SCOPE_GLOBAL,
+                key: badge.scope ? badge.key : makeKey(SCOPE_GLOBAL, badge.label || badge.key),
+            })),
+        };
+    }
+
+    // Renvoie { settings, badgeIndex }. Migre depuis v1/v2 si nécessaire.
     async function loadState() {
         const [synced, local] = await Promise.all([
             chrome.storage.sync.get(SETTINGS_KEY),
             chrome.storage.local.get([INDEX_KEY, LEGACY_KEY]),
         ]);
 
-        const badgeIndex = local[INDEX_KEY] || {};
         let settings = synced[SETTINGS_KEY];
+        let migrated = false;
 
         if (settings) {
-            settings = { ...DEFAULT_SETTINGS, ...settings };
+            const upgraded = upgradeSettings(settings);
+            migrated = upgraded !== settings;
+            settings = upgraded;
         } else if (local[LEGACY_KEY]) {
             settings = migrateLegacy(local[LEGACY_KEY]);
-            await saveSettings(settings);
+            migrated = true;
         } else {
             settings = { ...DEFAULT_SETTINGS };
         }
@@ -116,7 +154,23 @@ globalThis.TCH = (() => {
         settings.blacklisted = settings.blacklisted || [];
         settings.badges = settings.badges || [];
 
-        return { settings, badgeIndex };
+        if (migrated) await saveSettings(settings);
+
+        return { settings, badgeIndex: readIndex(local[INDEX_KEY]) };
+    }
+
+    // L'index v2 associait un imageId à une simple chaîne de caractères. Le
+    // nouveau format porte aussi la portée ; l'ancien est jeté plutôt que
+    // converti, c'est un cache qui se reconstruit dès le premier message lu.
+    function readIndex(raw) {
+        if (!raw) return {};
+        const index = {};
+        for (const [imageId, value] of Object.entries(raw)) {
+            if (value && typeof value === "object" && value.key) {
+                index[imageId] = { key: value.key, scope: value.scope || SCOPE_GLOBAL };
+            }
+        }
+        return index;
     }
 
     const saveSettings = (settings) =>
@@ -128,16 +182,19 @@ globalThis.TCH = (() => {
     // clé de badge -> un imageId représentatif, pour afficher l'icône réelle.
     function badgeSamples(badgeIndex) {
         const samples = new Map();
-        for (const [imageId, key] of Object.entries(badgeIndex)) {
-            if (!samples.has(key)) samples.set(key, imageId);
+        for (const [imageId, entry] of Object.entries(badgeIndex || {})) {
+            if (entry && !samples.has(entry.key)) samples.set(entry.key, imageId);
         }
         return samples;
     }
 
     return {
+        VERSION,
         SETTINGS_KEY,
         INDEX_KEY,
         LEGACY_KEY,
+        SCOPE_GLOBAL,
+        SCOPE_UNKNOWN,
         DEFAULT_SETTINGS,
         AUTO_COLORS,
         normalizeLabel,
@@ -145,8 +202,13 @@ globalThis.TCH = (() => {
         extractBadgeId,
         badgeImageUrl,
         pickColor,
+        makeKey,
+        keyScope,
+        isChannelScope,
         migrateLegacy,
+        upgradeSettings,
         loadState,
+        readIndex,
         saveSettings,
         saveBadgeIndex,
         badgeSamples,

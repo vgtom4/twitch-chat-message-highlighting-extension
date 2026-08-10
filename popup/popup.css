@@ -175,6 +175,18 @@ button:hover {
     accent-color: #9147ff;
 }
 
+.scope-heading {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #7d7d85;
+    margin-top: 0.5rem;
+}
+
+.scope-heading:first-child {
+    margin-top: 0;
+}
+
 .empty-hint {
     color: #7d7d85;
     font-size: 12px;

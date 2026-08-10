@@ -22,6 +22,24 @@
         ".video-chat__message-list-wrapper ul",
     ];
 
+    // Premiers segments d'URL qui ne désignent pas une chaîne.
+    const RESERVED_PATHS = new Set([
+        "directory", "videos", "video", "settings", "subscriptions", "wallet",
+        "drops", "inventory", "store", "prime", "downloads", "jobs", "turbo",
+        "search", "friends", "messages", "payments", "following", "collections",
+        "team", "event", "clips", "popout", "moderator", "u", "p", "legal",
+        "broadcast", "dashboard", "products", "communities", "bits",
+    ]);
+
+    // Repli quand l'URL ne porte pas le nom de la chaîne (pages de VOD).
+    const CHANNEL_LINK_SELECTORS = [
+        'a[data-a-target="watch-mode-channel-link"]',
+        'a[data-a-target="video-info-channel-name"]',
+        'a[data-a-target="player-info-channel-name"]',
+        'a[data-test-selector="ChannelLink"]',
+        '[data-a-target="user-channel-header-item"] a[href^="/"]',
+    ];
+
     const WRITE_DEBOUNCE_MS = 1500;
 
     // --- État en mémoire -----------------------------------------------------
@@ -34,6 +52,8 @@
     let whiteSet = new Set();
     let blackSet = new Set();
 
+    let channel = TCH.SCOPE_UNKNOWN;
+    let knownPath = "";
     let container = null;
     let lineObserver = null;
     let settingsDirty = false;
@@ -44,6 +64,46 @@
         badgeByKey = new Map(settings.badges.map((badge) => [badge.key, badge]));
         whiteSet = new Set(settings.whitelisted);
         blackSet = new Set(settings.blacklisted);
+    }
+
+    // --- Chaîne courante -----------------------------------------------------
+
+    function channelFromDom() {
+        for (const selector of CHANNEL_LINK_SELECTORS) {
+            const href = document.querySelector(selector)?.getAttribute("href");
+            const name = href?.split("/").filter(Boolean)[0];
+            if (name && !RESERVED_PATHS.has(name.toLowerCase())) {
+                return name.toLowerCase();
+            }
+        }
+        return null;
+    }
+
+    function detectChannel() {
+        const parts = location.pathname.split("/").filter(Boolean);
+        const head = parts[0]?.toLowerCase();
+
+        if (location.hostname === "dashboard.twitch.tv") {
+            return head === "u" && parts[1] ? parts[1].toLowerCase() : channelFromDom();
+        }
+        // /popout/<chaîne>/chat, /moderator/<chaîne>
+        if ((head === "popout" || head === "moderator") && parts[1]) {
+            return parts[1].toLowerCase();
+        }
+        // /<chaîne>
+        if (head && !RESERVED_PATHS.has(head)) return head;
+
+        // Pages de VOD et de clips : le nom n'est pas dans l'URL.
+        return channelFromDom();
+    }
+
+    // Renvoie true si la chaîne a changé.
+    function refreshChannel() {
+        knownPath = location.pathname;
+        const found = detectChannel() || TCH.SCOPE_UNKNOWN;
+        if (found === channel) return false;
+        channel = found;
+        return true;
     }
 
     // --- Écritures différées -------------------------------------------------
@@ -71,6 +131,55 @@
 
     // --- Badges --------------------------------------------------------------
 
+    function createBadge(scope, label) {
+        const entry = {
+            key: TCH.makeKey(scope, label),
+            scope,
+            label,
+            color: TCH.pickColor(settings.badges.length),
+            // Désactivé par défaut : découvrir un badge ne doit pas colorer le
+            // chat sans que l'utilisateur l'ait demandé.
+            isEnabled: false,
+        };
+        settings.badges.push(entry);
+        badgeByKey.set(entry.key, entry);
+        queueWrite({ settings: true });
+        return entry;
+    }
+
+    // Déplace un badge vers une autre portée. Si une entrée existe déjà à
+    // destination, les deux fusionnent : on garde la cible et on réoriente les
+    // imageIds de la source.
+    function moveScope(entry, scope) {
+        const targetKey = TCH.makeKey(scope, entry.label);
+        const existing = badgeByKey.get(targetKey);
+        const previousKey = entry.key;
+        let winner;
+
+        if (existing && existing !== entry) {
+            settings.badges = settings.badges.filter((badge) => badge !== entry);
+            badgeByKey.delete(previousKey);
+            // Une activation d'un côté ou de l'autre vaut activation.
+            existing.isEnabled = existing.isEnabled || entry.isEnabled;
+            winner = existing;
+        } else {
+            badgeByKey.delete(previousKey);
+            entry.key = targetKey;
+            entry.scope = scope;
+            badgeByKey.set(targetKey, entry);
+            winner = entry;
+        }
+
+        for (const [imageId, ref] of Object.entries(badgeIndex)) {
+            if (ref.key === previousKey) {
+                badgeIndex[imageId] = { key: winner.key, scope: winner.scope };
+            }
+        }
+
+        queueWrite({ settings: true, index: true });
+        return winner;
+    }
+
     // Résout un <img> de badge vers son entrée de réglages, en enregistrant le
     // badge s'il est inconnu. La correspondance passe par l'imageId (stable et
     // indépendant de la langue), pas par l'`alt`.
@@ -79,41 +188,48 @@
         if (!imageId) return null;
 
         const label = (img.getAttribute("alt") || "").trim();
-        const knownKey = badgeIndex[imageId];
+        const ref = badgeIndex[imageId];
+        let entry = ref ? badgeByKey.get(ref.key) : null;
 
-        if (knownKey) {
-            const entry = badgeByKey.get(knownKey);
+        if (entry) {
             // L'utilisateur a changé la langue de Twitch : on suit le libellé
             // sans casser la correspondance ni créer de doublon.
-            if (entry && label && entry.label !== label) {
+            if (label && entry.label !== label) {
                 entry.label = label;
                 queueWrite({ settings: true });
             }
-            return entry || null;
+
+            if (TCH.isChannelScope(channel) && entry.scope !== channel) {
+                if (entry.scope === TCH.SCOPE_UNKNOWN) {
+                    // Badge vu d'abord sur une page sans chaîne identifiable :
+                    // on le rattache maintenant qu'on la connaît.
+                    entry = moveScope(entry, channel);
+                } else if (entry.scope !== TCH.SCOPE_GLOBAL) {
+                    // Le même imageId sur deux chaînes : c'est un badge Twitch
+                    // commun, pas un badge de chaîne.
+                    entry = moveScope(entry, TCH.SCOPE_GLOBAL);
+                }
+            }
+
+            if (ref.key !== entry.key) {
+                badgeIndex[imageId] = { key: entry.key, scope: entry.scope };
+                queueWrite({ index: true });
+            }
+            return entry;
         }
 
-        const key = TCH.normalizeLabel(label);
-        if (!key) return null;
+        if (!TCH.normalizeLabel(label)) return null;
 
-        let entry = badgeByKey.get(key);
-        if (!entry) {
-            entry = {
-                key,
-                label,
-                color: TCH.pickColor(settings.badges.length),
-                // Désactivé par défaut : découvrir un badge ne doit pas colorer
-                // le chat sans que l'utilisateur l'ait demandé.
-                isEnabled: false,
-            };
-            settings.badges.push(entry);
-            badgeByKey.set(key, entry);
-            queueWrite({ settings: true });
-        } else if (label && entry.label !== label) {
-            entry.label = label;
-            queueWrite({ settings: true });
-        }
-
-        badgeIndex[imageId] = entry.key;
+        const scope = TCH.isChannelScope(channel) ? channel : TCH.SCOPE_UNKNOWN;
+        // Un badge déjà connu comme commun à tout Twitch le reste, même vu pour
+        // la première fois sur cette chaîne : sans ça, des réglages migrés
+        // depuis la v1 seraient dupliqués en badge de chaîne à la première
+        // lecture, et leur couleur perdue.
+        entry =
+            badgeByKey.get(TCH.makeKey(TCH.SCOPE_GLOBAL, label)) ||
+            badgeByKey.get(TCH.makeKey(scope, label)) ||
+            createBadge(scope, label);
+        badgeIndex[imageId] = { key: entry.key, scope: entry.scope };
         queueWrite({ index: true });
         return entry;
     }
@@ -289,7 +405,13 @@
     // Le conteneur est recréé à chaque changement de chaîne (navigation SPA,
     // sans rechargement de page) : on se réaccroche quand il disparaît.
     function attachToChat() {
-        if (container && container.isConnected) return;
+        const channelChanged = refreshChannel();
+        if (container && container.isConnected) {
+            // Même conteneur mais autre chaîne (VOD chargée après coup) : la
+            // portée des badges change, donc les couleurs aussi.
+            if (channelChanged) rescanAll();
+            return;
+        }
 
         const found = findContainer() || document.body;
         if (container === found) return;
@@ -305,15 +427,19 @@
         rescanAll();
     }
 
-    // Surveille l'apparition / le remplacement du conteneur de chat. Le
-    // traitement est réduit à un test de rattachement, groupé par frame.
+    // Surveille l'apparition / le remplacement du conteneur de chat, et le
+    // changement de chaîne. Le traitement se réduit à une comparaison de chaîne
+    // de caractères tant que rien ne bouge.
     function watchForChat() {
         let scheduled = false;
         const mountObserver = new MutationObserver(() => {
-            if (container && container !== document.body && container.isConnected) {
-                return;
-            }
-            if (scheduled) return;
+            const settled =
+                location.pathname === knownPath &&
+                container &&
+                container !== document.body &&
+                container.isConnected;
+            if (settled || scheduled) return;
+
             scheduled = true;
             requestAnimationFrame(() => {
                 scheduled = false;
@@ -337,8 +463,19 @@
             rescanAll();
         }
         if (area === "local" && changes[TCH.INDEX_KEY]) {
-            badgeIndex = changes[TCH.INDEX_KEY].newValue || {};
+            badgeIndex = TCH.readIndex(changes[TCH.INDEX_KEY].newValue);
         }
+    }
+
+    // Le popup demande quelle chaîne est affichée, pour ne lister que ses
+    // badges. Passer par un message plutôt que par le storage garantit qu'il
+    // interroge bien l'onglet qu'il recouvre.
+    function onMessage(message, sender, sendResponse) {
+        if (message?.type === "tch:getChannel") {
+            sendResponse({ channel });
+            return true;
+        }
+        return false;
     }
 
     async function init() {
@@ -348,6 +485,7 @@
         rebuildLookups();
 
         chrome.storage.onChanged.addListener(onStorageChanged);
+        chrome.runtime.onMessage.addListener(onMessage);
         window.addEventListener("pagehide", flushWrites);
 
         attachToChat();

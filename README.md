@@ -26,10 +26,40 @@ badge inconnu, une entrée est créée (désactivée par défaut) et apparaît d
 popup avec son icône réelle. Aucune API Twitch, aucun Client-Id, aucun OAuth.
 
 - `sync.tchSettings` — listes, couleurs, badges activés.
-- `local.tchBadgeIndex` — `imageId` → clé de badge (cache, croît avec les chaînes visitées).
+- `local.tchBadgeIndex` — `imageId` → `{ key, scope }` (cache, croît avec les chaînes visitées).
 
 Si l'utilisateur change la langue de Twitch, l'imageId reste connu : seul le
 libellé affiché est mis à jour, sans créer de doublon.
+
+### Portée d'un badge
+
+Un badge appartient à l'une de trois portées, et sa clé est
+`${portée}|${libellé normalisé}` :
+
+| Portée | Contenu |
+| ------ | ------- |
+| `global` | badges communs à tout Twitch : vérifié, prime, modérateur, VIP… |
+| `<chaîne>` | badges propres à un streamer : paliers d'abonnement, badges custom |
+| `?` | chaîne non identifiable (certaines pages de VOD) |
+
+La classification est déduite de l'observation, sans API : **un imageId vu sur
+deux chaînes différentes est forcément un badge commun** et se promeut en
+`global`, en fusionnant avec l'entrée globale existante s'il y en a une. Un
+badge qui n'apparaît que sur une chaîne lui reste attaché, avec sa propre
+couleur — l'« Abonné à 6 mois » de deux streamers sont deux entrées distinctes.
+
+Un badge découvert alors que la chaîne est indéterminée prend la portée `?`,
+puis est rattaché à la chaîne dès qu'elle est identifiée (et non promu global).
+
+Le popup range les badges en trois `<details>` : ceux de la chaîne affichée
+(déplié), les globaux, et les autres chaînes (replié, groupé par chaîne). Il
+obtient le nom de la chaîne en interrogeant le content script de l'onglet actif
+— pas via une valeur partagée dans le storage, qui serait fausse avec plusieurs
+onglets Twitch ouverts.
+
+La chaîne est lue dans l'URL (`/<chaîne>`, `/popout/<chaîne>/chat`,
+`/moderator/<chaîne>`, `dashboard.twitch.tv/u/<chaîne>`), avec repli sur un lien
+de chaîne du DOM pour les pages de VOD, dont l'URL ne porte que l'id de vidéo.
 
 ### Priorité appliquée à une ligne
 
@@ -43,7 +73,8 @@ libellé affiché est mis à jour, sans créer de doublon.
 `chrome.storage.sync` pour les réglages (partagés entre machines),
 `chrome.storage.local` pour l'index des imageIds. La migration depuis le format
 v1 (`local.twitchUsersHighlighter`) est automatique et conserve les listes et
-les couleurs choisies.
+les couleurs choisies ; les badges v1 sont classés `global`. L'index v2, qui ne
+portait pas la portée, est jeté et se reconstruit à la première lecture.
 
 ## TODOLIST
 
@@ -70,6 +101,9 @@ les couleurs choisies.
   sont triées pour se regrouper visuellement. Les regrouper automatiquement
   demanderait le `set_id`, indisponible dans le DOM.
 - Un badge n'apparaît dans le popup qu'après avoir été vu au moins une fois.
+- Un badge commun à tout Twitch reste rattaché à la première chaîne où il a été
+  vu tant qu'il n'a pas été rencontré sur une seconde. Il apparaît donc dans
+  "This channel" avant de basculer dans "Global badges".
 - `popup/bulma.min.css` et `twitch_colors.css` ne sont plus référencés.
 
 <!-- Keep -->

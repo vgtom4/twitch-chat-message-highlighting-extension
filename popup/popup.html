@@ -37,12 +37,25 @@
         </div>
 
         <div class="field">
-            <span class="section-title">Badges seen in chat</span>
-            <div class="badge-list" id="badgeList"></div>
-            <p class="empty-hint" id="badgeHint" hidden>
-                No badge detected yet. Open a Twitch chat &mdash; badges appear here as
-                soon as someone wearing one sends a message.
-            </p>
+            <details id="channelBadgesDetails" class="list-element" open>
+                <summary><span id="channelBadgesTitle">This channel</span></summary>
+                <div class="badge-list" id="channelBadges"></div>
+                <p class="empty-hint" id="channelBadgesHint" hidden></p>
+            </details>
+
+            <details id="globalBadgesDetails" class="list-element">
+                <summary><span id="globalBadgesCount">0</span> Global badges</summary>
+                <div class="badge-list" id="globalBadges"></div>
+                <p class="empty-hint" id="globalBadgesHint" hidden>
+                    None yet. A badge is recognised as global once it shows up on a
+                    second channel.
+                </p>
+            </details>
+
+            <details id="otherBadgesDetails" class="list-element">
+                <summary><span id="otherBadgesCount">0</span> Other channels</summary>
+                <div class="badge-list" id="otherBadges"></div>
+            </details>
         </div>
 
         <details id="whitelistDetails" class="list-element">
