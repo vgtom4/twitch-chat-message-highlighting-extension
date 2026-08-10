@@ -11,16 +11,40 @@
 <body>
     <div class="container">
 
-        <div class="toggles">
+        <div class="header-row">
             <label class="master-toggle">
                 <span>Extension enabled</span>
                 <input type="checkbox" id="enabledToggle">
             </label>
-            <label class="master-toggle sub-toggle">
+            <button type="button" id="settingsButton" class="icon-button" title="Settings"
+                aria-expanded="false" aria-controls="settingsPanel">⚙</button>
+        </div>
+
+        <section id="settingsPanel" class="settings-panel" hidden>
+            <label class="setting-row">
                 <span>Show button on chat hover</span>
                 <input type="checkbox" id="hoverToggle">
             </label>
-        </div>
+
+            <div class="setting-row">
+                <label for="defaultColor">Default highlight color</label>
+                <input type="color" id="defaultColor">
+            </div>
+
+            <div class="reset-zone">
+                <span class="section-title">Reset</span>
+                <button type="button" class="reset-button" id="resetBadges"
+                    data-label="Forget discovered badges">Forget discovered badges</button>
+                <button type="button" class="reset-button" id="resetUsers"
+                    data-label="Remove all users">Remove all users</button>
+                <button type="button" class="reset-button danger" id="resetAll"
+                    data-label="Reset everything">Reset everything</button>
+                <p class="empty-hint">
+                    Forgotten badges reappear on their own as soon as they show up
+                    in chat again, but their colors are lost.
+                </p>
+            </div>
+        </section>
 
         <div class="field">
             <label for="newUsername" class="section-title">Add a user</label>
@@ -52,10 +76,6 @@
                 No user yet. Add one above, or hover a chat message and use the
                 button on its left edge.
             </p>
-            <div class="default-color-row">
-                <label for="defaultColor">Default highlight color</label>
-                <input type="color" id="defaultColor">
-            </div>
         </details>
 
         <details id="channelBadgesDetails" class="list-element" open>

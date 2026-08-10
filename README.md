@@ -100,8 +100,21 @@ deux sens.
 
 ### Interrupteurs
 
-- `enabled` — interrupteur maître : coupe les couleurs **et** le bouton de survol ;
+- `enabled` — interrupteur maître, visible en haut du popup : coupe les couleurs
+  **et** le bouton de survol ;
 - `showHoverButton` — garde les couleurs mais retire le bouton dans le chat.
+
+### Panneau de réglages
+
+Le bouton engrenage déplie les réglages secondaires (`showHoverButton`, couleur
+par défaut) et une zone de reset : oublier les badges découverts, supprimer tous
+les utilisateurs, ou tout remettre à zéro. Chaque reset demande un second clic de
+confirmation, qui expire au bout de 4 s — plutôt qu'un `confirm()`, qui ferme le
+popup sur certaines plateformes.
+
+Oublier les badges vide aussi `tchBadgeIndex` : sinon ses imageIds pointeraient
+vers des entrées disparues. Les badges se redécouvrent dès le message suivant,
+sans leurs couleurs.
 
 ### Stockage
 

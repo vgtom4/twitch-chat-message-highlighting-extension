@@ -133,11 +133,101 @@ button:hover {
     margin: 0;
 }
 
-/* Interrupteurs */
-.toggles {
+/* En-tête : interrupteur maître + engrenage */
+.header-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+}
+
+.header-row > .master-toggle {
+    flex-grow: 1;
+}
+
+.icon-button {
+    background-color: #18181b;
+    border: 1px solid #36393f;
+    color: #adadb8;
+    padding: 0 0.6rem;
+    font-size: 15px;
+    line-height: 1;
+}
+
+.icon-button:hover {
+    background-color: #2a2c31;
+    color: #efeff1;
+}
+
+.icon-button.active {
+    background-color: #9147ff;
+    border-color: #9147ff;
+    color: #fff;
+}
+
+/* Panneau de réglages */
+.settings-panel {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 0.6rem;
+    border: 1px solid #36393f;
+    border-radius: 5px;
+    background-color: #18181b;
+    padding: 0.75rem;
+}
+
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 13px;
+    color: #dedee3;
+    cursor: pointer;
+}
+
+.setting-row input[type="checkbox"] {
+    accent-color: #9147ff;
+    cursor: pointer;
+}
+
+.setting-row:has(input:disabled) {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.reset-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.2rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid #2a2c31;
+}
+
+.reset-button {
+    background-color: #2a2c31;
+    color: #dedee3;
+    font-size: 12px;
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+}
+
+.reset-button:hover {
+    background-color: #3a3d44;
+}
+
+.reset-button.danger {
+    color: #ff8280;
+}
+
+.reset-button.armed {
+    background-color: #8c1210;
+    color: #fff;
+    font-weight: 600;
+}
+
+.reset-button.armed:hover {
+    background-color: #a81714;
 }
 
 .master-toggle {
@@ -156,17 +246,6 @@ button:hover {
 .master-toggle input {
     accent-color: #9147ff;
     cursor: pointer;
-}
-
-.sub-toggle {
-    font-weight: 400;
-    font-size: 13px;
-    color: #adadb8;
-}
-
-.sub-toggle:has(input:disabled) {
-    opacity: 0.4;
-    cursor: not-allowed;
 }
 
 /* Sections */
@@ -360,18 +439,6 @@ tr:hover .remove-button,
 /* Les badges sont décalés sous le nom de leur chaîne, qui reste à ras. */
 #otherBadges tr:not(.scope-row) .col-name {
     padding-left: 0.85rem;
-}
-
-.default-color-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-top: 0.6rem;
-    padding-top: 0.6rem;
-    border-top: 1px solid #2a2c31;
-    font-size: 12px;
-    color: #adadb8;
 }
 
 .empty-hint {

@@ -7,6 +7,11 @@
 
     const els = {
         enabledToggle: document.getElementById("enabledToggle"),
+        settingsButton: document.getElementById("settingsButton"),
+        settingsPanel: document.getElementById("settingsPanel"),
+        resetBadges: document.getElementById("resetBadges"),
+        resetUsers: document.getElementById("resetUsers"),
+        resetAll: document.getElementById("resetAll"),
         hoverToggle: document.getElementById("hoverToggle"),
         newUsername: document.getElementById("newUsername"),
         newUserMode: document.getElementById("newUserMode"),
@@ -428,6 +433,72 @@
         settings.defaultColor = els.defaultColor.value;
         persist();
         renderUsers();
+    });
+
+    // --- Panneau de réglages -------------------------------------------------
+
+    // Les remises à zéro sont irréversibles : on demande un second clic plutôt
+    // qu'un confirm(), qui ferme le popup sur certaines plateformes.
+    const resetButtons = [els.resetBadges, els.resetUsers, els.resetAll];
+    let armedTimer = null;
+
+    function disarm(button) {
+        button.classList.remove("armed");
+        button.textContent = button.dataset.label;
+        delete button.dataset.armed;
+    }
+
+    function arm(button) {
+        resetButtons.forEach(disarm);
+        clearTimeout(armedTimer);
+        button.dataset.armed = "true";
+        button.classList.add("armed");
+        button.textContent = "Click again to confirm";
+        armedTimer = setTimeout(() => disarm(button), 4000);
+    }
+
+    function onReset(button, apply) {
+        button.addEventListener("click", () => {
+            if (!button.dataset.armed) return arm(button);
+            clearTimeout(armedTimer);
+            disarm(button);
+            apply();
+        });
+    }
+
+    els.settingsButton.addEventListener("click", () => {
+        const open = els.settingsPanel.hidden;
+        els.settingsPanel.hidden = !open;
+        els.settingsButton.setAttribute("aria-expanded", String(open));
+        els.settingsButton.classList.toggle("active", open);
+        // Ne pas laisser un bouton armé derrière un panneau replié.
+        if (!open) resetButtons.forEach(disarm);
+    });
+
+    // Vider l'index en même temps que les badges : sinon ses imageIds
+    // pointeraient vers des entrées disparues.
+    function forgetBadges() {
+        settings.badges = [];
+        persist();
+        setBadgeIndex({});
+        TCH.saveBadgeIndex({});
+        render();
+    }
+
+    onReset(els.resetBadges, forgetBadges);
+
+    onReset(els.resetUsers, () => {
+        settings.users = [];
+        persist();
+        render();
+    });
+
+    onReset(els.resetAll, () => {
+        settings = { ...TCH.DEFAULT_SETTINGS, users: [], badges: [] };
+        persist();
+        setBadgeIndex({});
+        TCH.saveBadgeIndex({});
+        render();
     });
 
     // Un badge peut être découvert pendant que le popup est ouvert.
