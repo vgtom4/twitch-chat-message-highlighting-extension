@@ -7,7 +7,7 @@ function applyStylesToTab(twitchUsersHighlighter) {
     const manualHighlight = twitchUsersHighlighter.whitelisted
         .map(
             (user) =>
-                `.chat-line__message[data-a-user="${user}"] { background-color: ${backgroundColor} !important; }`
+                `.chat-line__message[data-a-user="${user}"], .vod-message:has([data-a-user="${user}"]) { background-color: ${backgroundColor} !important; }`
         )
         .join("\n");
     
@@ -15,7 +15,9 @@ function applyStylesToTab(twitchUsersHighlighter) {
         .filter((userBadge) => userBadge.isEnabled)
         .map(
             (userBadge) =>
-                `.chat-line__message:has(button[data-a-target="chat-badge"] img[alt*="${userBadge.label}"])${twitchUsersHighlighter.blacklisted.map((user) => `:not([data-a-user="${user}"])`).join('')}{ background-color: ${userBadge.color} !important; }`
+                `.chat-line__message:has(button[data-a-target="chat-badge"] img[alt*="${userBadge.label}"])${twitchUsersHighlighter.blacklisted.map((user) => `:not([data-a-user="${user}"])`).join('')},`
+                + `.vod-message:has(a[data-a-target="chat-badge"] img[alt*="${userBadge.label}"])${twitchUsersHighlighter.blacklisted.map((user) => `:not([data-a-user="${user}"])`).join('')}`
+                + `{ background-color: ${userBadge.color} !important; }`
         )
         .join("\n");
 
