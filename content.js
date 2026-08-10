@@ -120,7 +120,19 @@
         knownPath = location.pathname;
         const found = detectChannel() || TCH.SCOPE_UNKNOWN;
         if (found === channel) return false;
+
+        const wasUnknown = channel === TCH.SCOPE_UNKNOWN;
         channel = found;
+
+        if (wasUnknown && TCH.isChannelScope(found)) {
+            // Même page, chaîne identifiée après coup (VOD, chargement tardif) :
+            // les badges déjà croisés sont les bons, on les rattache.
+            for (const entry of seenBadges.values()) entry.scope = found;
+        } else {
+            // Changement de chaîne : les badges de la précédente n'ont plus à
+            // être proposés ici.
+            seenBadges.clear();
+        }
         return true;
     }
 
@@ -452,8 +464,25 @@
     // de caractères tant que rien ne bouge.
     function watchForChat() {
         let scheduled = false;
+        // Sur une page de VOD, le nom de la chaîne n'arrive qu'avec le player :
+        // on retente tant qu'on ne l'a pas, sans sonder indéfiniment une page qui
+        // n'en a pas. Le compteur repart à chaque navigation.
+        const MAX_CHANNEL_ATTEMPTS = 40;
+        let attempts = 0;
+        let attemptsPath = knownPath;
+
         const mountObserver = new MutationObserver(() => {
+            if (location.pathname !== attemptsPath) {
+                attemptsPath = location.pathname;
+                attempts = 0;
+            }
+
+            const searchingChannel =
+                channel === TCH.SCOPE_UNKNOWN && attempts < MAX_CHANNEL_ATTEMPTS;
+            if (searchingChannel) attempts++;
+
             const settled =
+                !searchingChannel &&
                 location.pathname === knownPath &&
                 container &&
                 container !== document.body &&
