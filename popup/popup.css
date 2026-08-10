@@ -210,7 +210,8 @@ button:hover {
     vertical-align: middle;
 }
 
-.rules-table tbody tr:hover {
+/* Les en-têtes de chaîne ne sont pas des règles : ni survol, ni interaction. */
+.rules-table tbody tr:not(.scope-row):hover {
     background-color: #1f1f23;
 }
 
@@ -314,6 +315,11 @@ tr:hover .remove-button,
     letter-spacing: 0.04em;
     color: #7d7d85;
     padding-top: 0.6rem !important;
+}
+
+/* Les badges sont décalés sous le nom de leur chaîne, qui reste à ras. */
+#otherBadges tr:not(.scope-row) .col-name {
+    padding-left: 0.85rem;
 }
 
 .default-color-row {

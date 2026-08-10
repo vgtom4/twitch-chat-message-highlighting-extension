@@ -249,6 +249,9 @@
             total += badges.length;
 
             const headingRow = document.createElement("tr");
+            // Marquée pour que le CSS l'écarte du survol et n'indente que les
+            // lignes de badge qui la suivent.
+            headingRow.className = "scope-row";
             const heading = document.createElement("td");
             heading.colSpan = 3;
             heading.className = "scope-heading";
