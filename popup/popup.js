@@ -18,6 +18,8 @@
         addUserButton: document.getElementById("addUserButton"),
         newUsernameError: document.getElementById("newUsernameError"),
         defaultColor: document.getElementById("defaultColor"),
+        seenBadges: document.getElementById("seenBadges"),
+        seenHint: document.getElementById("seenHint"),
         usersBody: document.getElementById("usersBody"),
         usersTable: document.getElementById("usersTable"),
         usersCount: document.getElementById("usersCount"),
@@ -40,19 +42,12 @@
     const { MODE } = TCH;
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
-    // Gardé en mémoire, jamais relu au moment d'agir : une lecture asynchrone au
-    // milieu d'une modification laisse `onChanged` remplacer `settings` entre la
-    // mutation et l'écriture, et le changement est perdu.
-    let badgeIndex = {};
-    let badgeSamples = new Map();
+    // Badges croisés dans le chat de l'onglet actif, sans règle. Lus au moment
+    // d'ouvrir le popup, jamais enregistrés : c'est le clic qui crée la règle.
+    let seen = [];
     let currentChannel = null;
 
     const persist = () => TCH.saveSettings(settings);
-
-    function setBadgeIndex(index) {
-        badgeIndex = index;
-        badgeSamples = TCH.badgeSamples(index);
-    }
 
     // Les lignes déjà affichées capturent des objets de `settings`, qui est
     // remplacé à chaque `onChanged`. On repart donc de la clé pour agir sur
@@ -182,11 +177,10 @@
     // priorité des couleurs, décidée par l'ordre des badges dans le DOM.
     const byLabel = (a, b) => (a.label || a.key).localeCompare(b.label || b.key);
 
-    // Déplacer un badge revient à changer sa clé : elle contient la portée. On
-    // reporte le changement sur l'index des imageIds, sinon le content script
-    // ne retrouverait plus l'entrée et en recréerait une.
+    // Déplacer un badge revient à changer sa clé : elle contient la portée. Les
+    // imageIds voyagent avec la règle, il n'y a plus d'index à réaligner.
     //
-    // Tout est synchrone jusqu'aux écritures : aucun `await` ne doit séparer la
+    // Tout est synchrone jusqu'à l'écriture : aucun `await` ne doit séparer la
     // mutation de `settings` de son enregistrement.
     function moveBadge(key, scope) {
         const badge = liveBadge(key);
@@ -200,27 +194,77 @@
             (other) => other !== badge && other.key === nextKey
         );
 
-        // Une entrée existe déjà à destination : les deux fusionnent.
+        // Une règle existe déjà à destination : les deux fusionnent.
         if (collision) {
             if (collision.mode === MODE.OFF) collision.mode = badge.mode;
+            collision.imageIds = [
+                ...new Set([...collision.imageIds, ...badge.imageIds]),
+            ];
             settings.badges = settings.badges.filter((other) => other !== badge);
         } else {
             badge.key = nextKey;
             badge.scope = target;
         }
 
-        const winner = collision || badge;
-        let touched = false;
-        for (const [imageId, ref] of Object.entries(badgeIndex)) {
-            if (ref.key !== key) continue;
-            badgeIndex[imageId] = { key: winner.key, scope: winner.scope };
-            touched = true;
-        }
-
         persist();
-        if (touched) TCH.saveBadgeIndex(badgeIndex);
         render();
     }
+
+    // --- Badges croisés dans le chat ----------------------------------------
+
+    // Un clic crée la règle : c'est le seul moment où un badge est enregistré.
+    function adoptBadge(entry) {
+        const scope = TCH.isChannelScope(entry.scope) ? entry.scope : TCH.SCOPE_UNKNOWN;
+
+        // Déjà une règle sous ce libellé et cette portée : on lui rattache
+        // simplement l'imageId au lieu de créer un doublon.
+        const existing =
+            liveBadge(TCH.makeKey(TCH.SCOPE_GLOBAL, entry.label)) ||
+            liveBadge(TCH.makeKey(TCH.SCOPE_EVENT, entry.label)) ||
+            liveBadge(TCH.makeKey(scope, entry.label));
+
+        if (existing) {
+            if (!existing.imageIds.includes(entry.imageId)) {
+                existing.imageIds = [...existing.imageIds, entry.imageId];
+            }
+            if (existing.mode === MODE.OFF) existing.mode = MODE.WHITE;
+        } else {
+            settings.badges = [
+                ...settings.badges,
+                TCH.makeBadge(scope, entry.label, [entry.imageId], TCH.pickColor(settings.badges.length)),
+            ];
+        }
+
+        seen = seen.filter((item) => item.imageId !== entry.imageId);
+        persist();
+        render();
+    }
+
+    function renderSeen() {
+        els.seenBadges.textContent = "";
+        // Un badge qui a reçu une règle entre-temps ne se propose plus.
+        const pending = seen.filter((entry) => !hasRule(entry.imageId));
+        els.seenHint.hidden = pending.length > 0;
+
+        pending.forEach((entry) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "seen-badge";
+            button.title = `${entry.label} — click to highlight`;
+            button.dataset.imageId = entry.imageId;
+
+            const img = document.createElement("img");
+            img.src = TCH.badgeImageUrl(entry.imageId);
+            img.alt = entry.label;
+            button.appendChild(img);
+
+            button.addEventListener("click", () => adoptBadge(entry));
+            els.seenBadges.appendChild(button);
+        });
+    }
+
+    const hasRule = (imageId) =>
+        settings.badges.some((badge) => badge.imageIds?.includes(imageId));
 
     function moveCell(badge) {
         const cell = document.createElement("td");
@@ -259,10 +303,10 @@
         const name = document.createElement("td");
         name.className = "col-name";
 
-        const sample = badgeSamples.get(badge.key);
-        if (sample) {
+        const icon = TCH.badgeIcon(badge);
+        if (icon) {
             const img = document.createElement("img");
-            img.src = TCH.badgeImageUrl(sample);
+            img.src = icon;
             img.alt = "";
             name.appendChild(img);
         }
@@ -385,6 +429,7 @@
         // Le bouton de survol n'a pas de sens si tout est coupé.
         els.hoverToggle.disabled = !settings.enabled;
         renderUsers();
+        renderSeen();
         renderBadges();
     }
 
@@ -475,17 +520,11 @@
         if (!open) resetButtons.forEach(disarm);
     });
 
-    // Vider l'index en même temps que les badges : sinon ses imageIds
-    // pointeraient vers des entrées disparues.
-    function forgetBadges() {
+    onReset(els.resetBadges, () => {
         settings.badges = [];
         persist();
-        setBadgeIndex({});
-        TCH.saveBadgeIndex({});
         render();
-    }
-
-    onReset(els.resetBadges, forgetBadges);
+    });
 
     onReset(els.resetUsers, () => {
         settings.users = [];
@@ -496,45 +535,42 @@
     onReset(els.resetAll, () => {
         settings = { ...TCH.DEFAULT_SETTINGS, users: [], badges: [] };
         persist();
-        setBadgeIndex({});
-        TCH.saveBadgeIndex({});
         render();
     });
 
-    // Un badge peut être découvert pendant que le popup est ouvert.
+    // Les réglages peuvent changer sous nos pieds : autre onglet, ou entretien
+    // d'une règle par un content script.
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === "sync" && changes[TCH.SETTINGS_KEY]) {
             settings = { ...TCH.DEFAULT_SETTINGS, ...changes[TCH.SETTINGS_KEY].newValue };
             render();
-        }
-        if (area === "local" && changes[TCH.INDEX_KEY]) {
-            setBadgeIndex(TCH.readIndex(changes[TCH.INDEX_KEY].newValue));
-            renderBadges();
         }
     });
 
     // On interroge le content script de l'onglet que le popup recouvre plutôt
     // que de lire une valeur partagée dans le storage : avec plusieurs onglets
     // Twitch ouverts, seul l'onglet actif donne la bonne réponse. Il connaît
-    // aussi la chaîne des pages de VOD, que l'URL ne porte pas.
-    async function detectChannel() {
+    // aussi la chaîne des pages de VOD, que l'URL ne porte pas, et les badges
+    // croisés dans ce chat, qui ne sont enregistrés nulle part.
+    async function askTab() {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tab?.id) return null;
+        if (!tab?.id) return {};
         try {
-            const response = await chrome.tabs.sendMessage(tab.id, { type: "tch:getChannel" });
-            const channel = response?.channel;
-            return channel && channel !== TCH.SCOPE_UNKNOWN ? channel : null;
+            return (await chrome.tabs.sendMessage(tab.id, { type: "tch:getState" })) || {};
         } catch {
             // Onglet sans content script (page hors Twitch).
-            return null;
+            return {};
         }
     }
 
     async function init() {
-        const [state, channel] = await Promise.all([TCH.loadState(), detectChannel()]);
+        const [state, tabState] = await Promise.all([TCH.loadState(), askTab()]);
         settings = state.settings;
-        setBadgeIndex(state.badgeIndex);
-        currentChannel = channel;
+        currentChannel =
+            tabState.channel && tabState.channel !== TCH.SCOPE_UNKNOWN ? tabState.channel : null;
+        // Ordre d'apparition dans le chat : les badges les plus courants
+        // (diffuseur, modérateur, abonné) arrivent en tête.
+        seen = tabState.seen || [];
         render();
     }
 

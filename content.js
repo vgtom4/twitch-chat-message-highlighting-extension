@@ -47,21 +47,39 @@
     // c'était le coût dominant de la v1.
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
-    let badgeIndex = {};
+    let badgeByImageId = new Map();
     let badgeByKey = new Map();
     let userByLogin = new Map();
+
+    // Badges croisés dans le chat qui n'ont pas (encore) de règle. Purement en
+    // mémoire, le temps de la session : le popup vient les lire pour les
+    // proposer, et rien n'est enregistré avant que l'utilisateur en choisisse un.
+    const seenBadges = new Map(); // imageId -> { imageId, label, scope }
 
     let channel = TCH.SCOPE_UNKNOWN;
     let knownPath = "";
     let container = null;
     let lineObserver = null;
     let settingsDirty = false;
-    let indexDirty = false;
     let writeTimer = null;
 
     function rebuildLookups() {
         badgeByKey = new Map(settings.badges.map((badge) => [badge.key, badge]));
-        userByLogin = new Map(settings.users.map((user) => [user.login, user]));
+        userByLogin = new Map();
+        for (const user of settings.users) userByLogin.set(user.login, user);
+
+        // Une règle porte tous les imageIds sous lesquels on l'a reconnue.
+        badgeByImageId = new Map();
+        for (const badge of settings.badges) {
+            for (const imageId of badge.imageIds || []) {
+                badgeByImageId.set(imageId, badge);
+            }
+        }
+
+        // Un badge qui vient de recevoir une règle n'est plus à proposer.
+        for (const imageId of seenBadges.keys()) {
+            if (badgeByImageId.has(imageId)) seenBadges.delete(imageId);
+        }
     }
 
     const hoverButtonAllowed = () => settings.enabled && settings.showHoverButton;
@@ -107,141 +125,125 @@
     }
 
     // --- Écritures différées -------------------------------------------------
-    // La découverte des badges provoque des écritures ; on les regroupe pour ne
-    // pas marteler le storage (et son quota, côté sync).
+    // Il ne reste que l'entretien des règles existantes (libellé qui suit la
+    // langue, imageId rattaché, changement de portée) : on les regroupe pour ne
+    // pas marteler le storage et son quota.
 
-    function queueWrite({ settings: dirtySettings, index: dirtyIndex }) {
-        if (dirtySettings) settingsDirty = true;
-        if (dirtyIndex) indexDirty = true;
+    function queueWrite() {
+        settingsDirty = true;
         if (writeTimer) return;
         writeTimer = setTimeout(flushWrites, WRITE_DEBOUNCE_MS);
     }
 
     function flushWrites() {
         writeTimer = null;
-        if (settingsDirty) {
-            settingsDirty = false;
-            TCH.saveSettings(settings);
-        }
-        if (indexDirty) {
-            indexDirty = false;
-            TCH.saveBadgeIndex(badgeIndex);
-        }
+        if (!settingsDirty) return;
+        settingsDirty = false;
+        TCH.saveSettings(settings);
     }
 
     // --- Badges --------------------------------------------------------------
 
-    function createBadge(scope, label) {
-        const entry = {
-            key: TCH.makeKey(scope, label),
-            scope,
-            // Chaîne de découverte, conservée pour pouvoir défaire un
-            // déplacement manuel vers Global ou Event.
-            origin: scope,
-            label,
-            color: TCH.pickColor(settings.badges.length),
-            // Inactif par défaut : découvrir un badge ne doit pas colorer le
-            // chat sans que l'utilisateur l'ait demandé.
-            mode: TCH.MODE.OFF,
-        };
-        settings.badges.push(entry);
-        badgeByKey.set(entry.key, entry);
-        queueWrite({ settings: true });
-        return entry;
-    }
-
-    // Déplace un badge vers une autre portée. Si une entrée existe déjà à
-    // destination, les deux fusionnent : on garde la cible et on réoriente les
-    // imageIds de la source.
+    // Déplace une règle vers une autre portée. Si une règle existe déjà à
+    // destination sous le même libellé, les deux fusionnent.
     function moveScope(entry, scope) {
         const targetKey = TCH.makeKey(scope, entry.label);
         const existing = badgeByKey.get(targetKey);
-        const previousKey = entry.key;
-        let winner;
 
         if (existing && existing !== entry) {
             settings.badges = settings.badges.filter((badge) => badge !== entry);
-            badgeByKey.delete(previousKey);
             // Un réglage explicite d'un côté ou de l'autre est conservé ; en
             // cas de désaccord, celui de la destination l'emporte.
             if (existing.mode === TCH.MODE.OFF) existing.mode = entry.mode;
-            winner = existing;
-        } else {
-            badgeByKey.delete(previousKey);
-            entry.key = targetKey;
-            entry.scope = scope;
-            badgeByKey.set(targetKey, entry);
-            winner = entry;
+            existing.imageIds = [
+                ...new Set([...existing.imageIds, ...entry.imageIds]),
+            ];
+            rebuildLookups();
+            queueWrite();
+            return existing;
         }
 
-        for (const [imageId, ref] of Object.entries(badgeIndex)) {
-            if (ref.key === previousKey) {
-                badgeIndex[imageId] = { key: winner.key, scope: winner.scope };
-            }
-        }
-
-        queueWrite({ settings: true, index: true });
-        return winner;
+        entry.key = targetKey;
+        entry.scope = scope;
+        rebuildLookups();
+        queueWrite();
+        return entry;
     }
 
-    // Résout un <img> de badge vers son entrée de réglages, en enregistrant le
-    // badge s'il est inconnu. La correspondance passe par l'imageId (stable et
-    // indépendant de la langue), pas par l'`alt`.
+    // Rattache un imageId à une règle existante. Sert aux règles issues d'une
+    // migration, qui connaissent leur libellé mais pas encore leurs imageIds.
+    function attachImageId(entry, imageId) {
+        if (entry.imageIds.includes(imageId)) return;
+        entry.imageIds.push(imageId);
+        badgeByImageId.set(imageId, entry);
+        queueWrite();
+    }
+
+    // Résout un <img> de badge vers sa règle, s'il en a une. Sinon le badge est
+    // seulement mémorisé pour la session, à proposer dans le popup : rien n'est
+    // enregistré tant que l'utilisateur ne l'a pas choisi.
     function resolveBadge(img) {
         const imageId = TCH.extractBadgeId(img.getAttribute("src"));
-        // Badges de la liste d'exclusion (prédictions...) : ni découverts, ni
-        // pris en compte pour la couleur.
+        // Badges de la liste d'exclusion (prédictions...) : ni proposés, ni pris
+        // en compte pour la couleur.
         if (!imageId || TCH.isIgnoredBadge(imageId)) return null;
 
         const label = (img.getAttribute("alt") || "").trim();
-        const ref = badgeIndex[imageId];
-        let entry = ref ? badgeByKey.get(ref.key) : null;
+        let entry = badgeByImageId.get(imageId);
 
-        if (entry) {
-            // L'utilisateur a changé la langue de Twitch : on suit le libellé
-            // sans casser la correspondance ni créer de doublon.
-            if (label && entry.label !== label) {
-                entry.label = label;
-                queueWrite({ settings: true });
-            }
-
-            if (TCH.isChannelScope(channel) && entry.scope !== channel) {
-                if (entry.scope === TCH.SCOPE_UNKNOWN) {
-                    // Badge vu d'abord sur une page sans chaîne identifiable :
-                    // on le rattache maintenant qu'on la connaît.
-                    entry = moveScope(entry, channel);
-                    entry.origin = entry.scope;
-                } else if (TCH.isChannelScope(entry.scope)) {
-                    // Le même imageId sur deux chaînes : ce n'est pas un badge
-                    // propre à un streamer. Il part en Event, jamais en Global —
-                    // ce dernier reste un classement manuel.
-                    entry = moveScope(entry, TCH.SCOPE_EVENT);
-                }
-                // Déjà en Global ou en Event : on n'y touche plus.
-            }
-
-            if (ref.key !== entry.key) {
-                badgeIndex[imageId] = { key: entry.key, scope: entry.scope };
-                queueWrite({ index: true });
-            }
-            return entry;
+        // Règle sans imageId connu (migration) : on la reconnaît par son
+        // libellé, une seule fois, puis l'imageId prend le relais.
+        if (!entry && TCH.normalizeLabel(label)) {
+            const scope = TCH.isChannelScope(channel) ? channel : TCH.SCOPE_UNKNOWN;
+            entry =
+                badgeByKey.get(TCH.makeKey(TCH.SCOPE_GLOBAL, label)) ||
+                badgeByKey.get(TCH.makeKey(TCH.SCOPE_EVENT, label)) ||
+                badgeByKey.get(TCH.makeKey(scope, label));
+            if (entry) attachImageId(entry, imageId);
         }
 
-        if (!TCH.normalizeLabel(label)) return null;
+        if (!entry) {
+            if (TCH.normalizeLabel(label)) rememberSeen(imageId, label);
+            return null;
+        }
 
-        const scope = TCH.isChannelScope(channel) ? channel : TCH.SCOPE_UNKNOWN;
-        // Un badge déjà rangé dans Global ou Event sous ce libellé y reste, même
-        // vu pour la première fois sur cette chaîne : sans ça, un classement
-        // manuel (ou des réglages migrés depuis la v1) serait dupliqué en badge
-        // de chaîne à la première lecture, et sa couleur perdue.
-        entry =
-            badgeByKey.get(TCH.makeKey(TCH.SCOPE_GLOBAL, label)) ||
-            badgeByKey.get(TCH.makeKey(TCH.SCOPE_EVENT, label)) ||
-            badgeByKey.get(TCH.makeKey(scope, label)) ||
-            createBadge(scope, label);
-        badgeIndex[imageId] = { key: entry.key, scope: entry.scope };
-        queueWrite({ index: true });
+        // L'utilisateur a changé la langue de Twitch : on suit le libellé sans
+        // casser la correspondance, qui repose sur l'imageId.
+        if (label && entry.label !== label) {
+            entry.label = label;
+            queueWrite();
+        }
+
+        if (TCH.isChannelScope(channel) && entry.scope !== channel) {
+            if (entry.scope === TCH.SCOPE_UNKNOWN) {
+                // Règle créée sur une page sans chaîne identifiable : on la
+                // rattache maintenant qu'on la connaît.
+                entry = moveScope(entry, channel);
+                entry.origin = entry.scope;
+            } else if (TCH.isChannelScope(entry.scope)) {
+                // Le même imageId sur deux chaînes : ce n'est pas un badge
+                // propre à un streamer. Il part en Event, jamais en Global —
+                // ce dernier reste un classement manuel.
+                entry = moveScope(entry, TCH.SCOPE_EVENT);
+            }
+            // Déjà en Global ou en Event : on n'y touche plus.
+        }
+
         return entry;
+    }
+
+    function rememberSeen(imageId, label) {
+        const known = seenBadges.get(imageId);
+        // Le libellé peut changer de langue en cours de session.
+        if (known) {
+            known.label = label;
+            return;
+        }
+        seenBadges.set(imageId, {
+            imageId,
+            label,
+            scope: TCH.isChannelScope(channel) ? channel : TCH.SCOPE_UNKNOWN,
+        });
     }
 
     // Couleur dictée par les badges de la ligne. On parcourt tout même après
@@ -480,17 +482,14 @@
             if (!hoverButtonAllowed()) detachButton();
             rescanAll();
         }
-        if (area === "local" && changes[TCH.INDEX_KEY]) {
-            badgeIndex = TCH.readIndex(changes[TCH.INDEX_KEY].newValue);
-        }
     }
 
-    // Le popup demande quelle chaîne est affichée, pour ne lister que ses
-    // badges. Passer par un message plutôt que par le storage garantit qu'il
-    // interroge bien l'onglet qu'il recouvre.
+    // Le popup demande la chaîne affichée et les badges croisés dans ce chat.
+    // Passer par un message plutôt que par le storage garantit qu'il interroge
+    // bien l'onglet qu'il recouvre, et évite d'enregistrer quoi que ce soit.
     function onMessage(message, sender, sendResponse) {
-        if (message?.type === "tch:getChannel") {
-            sendResponse({ channel });
+        if (message?.type === "tch:getState") {
+            sendResponse({ channel, seen: [...seenBadges.values()] });
             return true;
         }
         return false;
@@ -499,7 +498,6 @@
     async function init() {
         const state = await TCH.loadState();
         settings = state.settings;
-        badgeIndex = state.badgeIndex;
         rebuildLookups();
 
         chrome.storage.onChanged.addListener(onStorageChanged);

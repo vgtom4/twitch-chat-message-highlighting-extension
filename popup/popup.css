@@ -256,6 +256,32 @@ button:hover {
     cursor: pointer;
 }
 
+/* Badges croisés dans le chat, à adopter d'un clic */
+.seen-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.seen-badge {
+    background-color: #1e1f21;
+    border: 1px solid #36393f;
+    border-radius: 5px;
+    padding: 0.25rem;
+    line-height: 0;
+}
+
+.seen-badge:hover {
+    background-color: #2a2c31;
+    border-color: #9147ff;
+}
+
+.seen-badge img {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
 /* Sections */
 .list-element {
     border: 1px solid #36393f;

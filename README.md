@@ -21,12 +21,19 @@ Le matching se fait sur l'**imageId** du badge, extrait de
 `https://static-cdn.jtvnw.net/badges/v1/<imageId>/1`, et non sur l'attribut
 `alt` — celui-ci change avec la langue de l'interface Twitch.
 
-Les badges sont découverts en lisant le chat : au premier message portant un
-badge inconnu, une entrée est créée (désactivée par défaut) et apparaît dans le
-popup avec son icône réelle. Aucune API Twitch, aucun Client-Id, aucun OAuth.
+Aucune API Twitch, aucun Client-Id, aucun OAuth : les badges sont reconnus en
+lisant le chat.
 
-- `sync.tchSettings` — listes, couleurs, badges activés.
-- `local.tchBadgeIndex` — `imageId` → `{ key, scope }` (cache, croît avec les chaînes visitées).
+**Rien n'est enregistré tant que l'utilisateur n'a pas choisi.** Les badges
+croisés dans le chat vivent en mémoire dans le content script, le temps de la
+session. Le popup vient les lire par message et les affiche en bande sous
+« Seen in this chat » ; **c'est le clic sur une icône qui crée la règle**, en
+mise en avant d'emblée. Le storage ne contient donc que ce qui sert vraiment.
+
+Une règle porte elle-même ses `imageIds` : c'est ce qui l'identifie face au DOM.
+Il n'y a plus d'index séparé. Une règle issue d'une migration n'a pas encore
+d'imageId — elle est reconnue une fois par son libellé, puis reçoit l'imageId et
+l'utilise ensuite.
 
 Si l'utilisateur change la langue de Twitch, l'imageId reste connu : seul le
 libellé affiché est mis à jour, sans créer de doublon.
@@ -34,14 +41,14 @@ libellé affiché est mis à jour, sans créer de doublon.
 ### Badges ignorés
 
 `IGNORED_BADGE_IDS` dans [shared.js](shared.js) liste des imageIds à ne jamais
-traiter : ni découverts, ni listés dans le popup, ni pris en compte pour colorer
-une ligne. Y figurent les badges de prédiction (les deux issues), qui indiquent
-le vote de l'auteur du message et non ce qu'il est.
+traiter : ni proposés dans le popup, ni pris en compte pour colorer une ligne. Y
+figurent les badges de prédiction (les deux issues), qui indiquent le vote de
+l'auteur du message et non ce qu'il est.
 
 La purge se rejoue à **chaque** chargement, pas au fil d'une migration : ajouter
-un identifiant à la liste suffit à retirer ce qui a déjà été découvert, sans
-nouvelle version de schéma. Un badge dont il reste au moins un imageId légitime
-est conservé ; seul l'imageId ignoré quitte l'index.
+un identifiant à la liste suffit à retirer ce qui figure déjà dans les règles,
+sans nouvelle version de schéma. Une règle qui garde au moins un imageId légitime
+est conservée, allégée de l'imageId ignoré.
 
 ### Portée d'un badge
 
@@ -50,10 +57,10 @@ Un badge appartient à l'une de trois portées, et sa clé est
 
 | Portée | Contenu | Y entre |
 | ------ | ------- | ------- |
-| `<chaîne>` | badges propres à un streamer : paliers d'abonnement, badges custom | automatiquement, à la découverte |
+| `<chaîne>` | badges propres à un streamer : paliers d'abonnement, badges custom | à la création de la règle |
 | `event` | badges vus sur plus d'une chaîne : campagnes, drops, non triés | automatiquement |
 | `global` | badges permanents de Twitch : vérifié, prime, modérateur, VIP… | **manuellement uniquement** |
-| `?` | chaîne non identifiable (certaines pages de VOD) | automatiquement |
+| `?` | chaîne non identifiable (certaines pages de VOD) | à la création de la règle |
 
 La classification automatique est déduite de l'observation, sans API : **un
 imageId vu sur deux chaînes différentes n'est pas un badge de streamer** et passe
@@ -65,11 +72,11 @@ distinctes.
 sort tout seul. C'est là qu'on range les badges permanents, une fois pour toutes.
 Un badge déjà en `global` ou en `event` n'est plus reclassé par l'observation.
 
-Un badge découvert alors que la chaîne est indéterminée prend la portée `?`, puis
-est rattaché à la chaîne dès qu'elle est identifiée.
+Une règle créée alors que la chaîne est indéterminée prend la portée `?`, puis
+est rattachée à la chaîne dès qu'elle est identifiée.
 
-Chaque badge mémorise son `origin`, la chaîne où il a été vu la première fois,
-pour pouvoir défaire un déplacement manuel.
+Chaque badge mémorise son `origin`, la chaîne où la règle a été créée, pour
+pouvoir défaire un déplacement manuel.
 
 Le popup range les badges en quatre `<details>` : la chaîne affichée (déplié),
 `event`, `global`, et les autres chaînes (replié, groupé par chaîne). La colonne
@@ -77,9 +84,10 @@ Le popup range les badges en quatre `<details>` : la chaîne affichée (déplié
 liste courante renvoie le badge à sa chaîne d'origine. Si une entrée existe déjà
 à destination sous le même libellé, les deux fusionnent.
 
-Le popup obtient le nom de la chaîne en interrogeant le content script de
-l'onglet actif — pas via une valeur partagée dans le storage, qui serait fausse
-avec plusieurs onglets Twitch ouverts.
+Le popup obtient le nom de la chaîne **et les badges croisés dans ce chat** en
+interrogeant le content script de l'onglet actif (message `tch:getState`) — pas
+via une valeur partagée dans le storage, qui serait fausse avec plusieurs onglets
+Twitch ouverts, et qui supposerait d'enregistrer ces badges.
 
 La chaîne est lue dans l'URL (`/<chaîne>`, `/popout/<chaîne>/chat`,
 `/moderator/<chaîne>`, `dashboard.twitch.tv/u/<chaîne>`), avec repli sur un lien
@@ -119,24 +127,24 @@ deux sens.
 ### Panneau de réglages
 
 Le bouton engrenage déplie les réglages secondaires (`showHoverButton`, couleur
-par défaut) et une zone de reset : oublier les badges découverts, supprimer tous
-les utilisateurs, ou tout remettre à zéro. Chaque reset demande un second clic de
+par défaut) et une zone de reset : supprimer toutes les règles de badge, tous les
+utilisateurs, ou tout remettre à zéro. Chaque reset demande un second clic de
 confirmation, qui expire au bout de 4 s — plutôt qu'un `confirm()`, qui ferme le
 popup sur certaines plateformes.
 
-Oublier les badges vide aussi `tchBadgeIndex` : sinon ses imageIds pointeraient
-vers des entrées disparues. Les badges se redécouvrent dès le message suivant,
-sans leurs couleurs.
+Les badges dont la règle est supprimée retournent dans « Seen in this chat » et
+peuvent être repris d'un clic, mais leur couleur est perdue.
 
 ### Stockage
 
-`chrome.storage.sync` pour les réglages (partagés entre machines),
-`chrome.storage.local` pour l'index des imageIds. Les migrations depuis v1
-(`local.twitchUsersHighlighter`), v2 et v3 sont automatiques : les listes
-`whitelisted`/`blacklisted` fusionnent en une table `users` portant un mode, les
-badges v1/v2 sont classés `global`, et les couleurs choisies sont conservées.
-L'index v2, qui ne portait pas la portée, est jeté et se reconstruit à la
-première lecture.
+Tout tient dans `chrome.storage.sync` (partagé entre machines), sous une clé
+unique. `chrome.storage.local` n'est plus lu que pour les migrations.
+
+Les migrations depuis v1 (`local.twitchUsersHighlighter`) à v5 sont automatiques :
+les listes `whitelisted`/`blacklisted` fusionnent en une table `users` portant un
+mode, les badges v1/v2 sont classés `global`, l'ancien index `tchBadgeIndex` est
+replié dans les `imageIds` des règles puis supprimé, et les couleurs choisies sont
+conservées.
 
 ## TODOLIST
 
@@ -162,20 +170,23 @@ première lecture.
   mois", "Abonné à 12 mois"…), donc une entrée par palier dans le popup. Elles
   sont triées pour se regrouper visuellement. Les regrouper automatiquement
   demanderait le `set_id`, indisponible dans le DOM.
-- Un badge n'apparaît dans le popup qu'après avoir été vu au moins une fois.
-- Un badge commun à tout Twitch reste rattaché à la première chaîne où il a été
-  vu tant qu'il n'a pas été rencontré sur une seconde. Il apparaît donc dans
-  "This channel" avant de basculer dans "Event badges", d'où on le promeut
-  manuellement en "Global badges" s'il est permanent.
-- Un badge migré depuis la v1/v2 n'a pas de chaîne d'origine connue : annuler
-  son déplacement le renvoie en portée `?`, donc dans "Other channels".
-- Le popup et les onglets écrivent la même clé de storage sans verrou : si une
-  découverte de badge tombe exactement pendant une action du popup, le dernier
-  écrivain gagne. Un badge découvert et perdu ainsi est redécouvert au message
-  suivant, et il n'était pas encore configuré — l'état converge.
+- Un badge n'est proposé qu'après avoir été vu au moins une fois dans le chat de
+  l'onglet ouvert, et la liste des badges vus est perdue au rechargement de la
+  page. Elle se reconstitue en quelques messages.
+- Une règle de badge reste rattachée à la chaîne où elle a été créée tant que son
+  imageId n'a pas été rencontré sur une seconde chaîne. Un badge permanent de
+  Twitch apparaît donc dans "This channel", puis bascule dans "Event badges", d'où
+  on le promeut manuellement en "Global badges".
+- Une règle migrée depuis la v1/v2 n'a pas de chaîne d'origine connue : annuler
+  son déplacement la renvoie en portée `?`, donc dans "Other channels".
+- Le popup et les onglets écrivent la même clé de storage sans verrou : le dernier
+  écrivain gagne. Les onglets n'écrivent plus qu'à l'occasion (libellé qui suit la
+  langue, imageId rattaché, changement de portée), ce qui rend la collision rare
+  et sans conséquence durable.
   **Corollaire pour le code du popup** : aucun `await` ne doit séparer une
   mutation de `settings` de son enregistrement, sinon `onChanged` remplace
-  `settings` entre les deux et le changement est perdu.
+  `settings` entre les deux et le changement est perdu. La suite `flow` vérifie
+  cet invariant sur `moveBadge`, `adoptBadge` et `addUser`.
 - `popup/bulma.min.css` et `twitch_colors.css` ne sont plus référencés.
 
 <!-- Keep -->

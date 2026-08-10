@@ -6,7 +6,7 @@
 globalThis.TCH = (() => {
     "use strict";
 
-    const VERSION = 5;
+    const VERSION = 6;
 
     // Un badge comme un utilisateur peut être ignoré, colorer la ligne, ou au
     // contraire empêcher toute coloration. Le troisième état remplace les
@@ -14,11 +14,15 @@ globalThis.TCH = (() => {
     const MODE = { OFF: "off", WHITE: "white", BLACK: "black" };
 
     // Réglages utilisateur : synchronisés entre les machines, volume faible.
+    // Seuls les badges explicitement retenus y figurent — les badges croisés
+    // dans le chat vivent en mémoire dans le content script, le temps de la
+    // session, et ne sont enregistrés que sur un clic dans le popup.
     const SETTINGS_KEY = "tchSettings";
-    // Correspondance imageId de badge -> { key, scope }. Cache local, croît
-    // avec les chaînes visitées (paliers d'abonnement, badges custom).
+    // Anciens formats, lus une fois pour la migration puis supprimés.
+    // v2-v5 : correspondance imageId -> { key, scope }, désormais portée par la
+    // règle elle-même (`badge.imageIds`).
     const INDEX_KEY = "tchBadgeIndex";
-    // Ancien format v1, lu une seule fois pour la migration.
+    // v1 : tout dans une seule clé.
     const LEGACY_KEY = "twitchUsersHighlighter";
 
     // Portée d'un badge.
@@ -70,9 +74,10 @@ globalThis.TCH = (() => {
         defaultColor: "#0c6bb8",
         // [{ login, mode, color }]
         users: [],
-        // [{ key, scope, label, color, mode }]
+        // [{ key, scope, origin, label, color, mode, imageIds }]
         // `key` = `${scope}|${label normalisé}`, figée tant que la portée ne
-        // change pas. `label` suit la langue de l'interface Twitch.
+        // change pas. `label` suit la langue de l'interface Twitch. `imageIds`
+        // porte la correspondance vers le DOM : c'est ce qui identifie le badge.
         badges: [],
     };
 
@@ -91,7 +96,23 @@ globalThis.TCH = (() => {
 
     const badgeImageUrl = (imageId) => `${BADGE_CDN}/${imageId}/1`;
 
+    // Icône représentative d'une règle. Une règle migrée depuis la v1 n'a pas
+    // encore d'imageId : elle en recevra un à la première rencontre.
+    const badgeIcon = (badge) =>
+        badge.imageIds?.length ? badgeImageUrl(badge.imageIds[0]) : null;
+
     const pickColor = (index) => AUTO_COLORS[index % AUTO_COLORS.length];
+
+    // Une règle de badge, créée depuis un badge croisé dans le chat.
+    const makeBadge = (scope, label, imageIds, color, mode = MODE.WHITE) => ({
+        key: makeKey(scope, label),
+        scope,
+        origin: scope,
+        label,
+        color,
+        mode,
+        imageIds: [...imageIds],
+    });
 
     // La portée fait partie de l'identité du badge : le badge "Abonné à 6 mois"
     // de deux chaînes différentes a deux imageIds différents et doit rester
@@ -145,6 +166,8 @@ globalThis.TCH = (() => {
                     label: badge.label,
                     color: badge.color || pickColor(index),
                     mode: badge.isEnabled === false ? MODE.OFF : MODE.WHITE,
+                    // Inconnus à ce stade : rattachés à la première rencontre.
+                    imageIds: [],
                 }));
         }
 
@@ -154,9 +177,18 @@ globalThis.TCH = (() => {
     // v2 ne rattachait pas les badges à une chaîne : on les considère globaux,
     // ceux qui étaient en réalité propres à une chaîne se re-scinderont à la
     // prochaine visite. v3 séparait les utilisateurs en deux listes et ne
-    // connaissait que deux états pour un badge.
-    function upgradeSettings(settings) {
+    // connaissait que deux états pour un badge. v5 gardait la correspondance
+    // vers le DOM dans un index séparé, replié ici dans `imageIds`.
+    function upgradeSettings(settings, legacyIndex) {
         if (settings.version === VERSION) return settings;
+
+        // Regroupe les imageIds de l'ancien index par clé de badge.
+        const imageIdsByKey = new Map();
+        for (const [imageId, ref] of Object.entries(legacyIndex || {})) {
+            if (!ref?.key) continue;
+            if (!imageIdsByKey.has(ref.key)) imageIdsByKey.set(ref.key, []);
+            imageIdsByKey.get(ref.key).push(imageId);
+        }
 
         const upgraded = {
             ...DEFAULT_SETTINGS,
@@ -172,6 +204,7 @@ globalThis.TCH = (() => {
                 label: badge.label,
                 color: badge.color,
                 mode: badge.mode || (badge.isEnabled ? MODE.WHITE : MODE.OFF),
+                imageIds: badge.imageIds || imageIdsByKey.get(badge.key) || [],
             })),
         };
 
@@ -196,7 +229,7 @@ globalThis.TCH = (() => {
         return upgraded;
     }
 
-    // Renvoie { settings, badgeIndex }. Migre depuis v1/v2 si nécessaire.
+    // Renvoie les réglages, en migrant depuis v1-v5 si nécessaire.
     async function loadState() {
         const [synced, local] = await Promise.all([
             chrome.storage.sync.get(SETTINGS_KEY),
@@ -207,7 +240,7 @@ globalThis.TCH = (() => {
         let migrated = false;
 
         if (settings) {
-            const upgraded = upgradeSettings(settings);
+            const upgraded = upgradeSettings(settings, readLegacyIndex(local[INDEX_KEY]));
             migrated = upgraded !== settings;
             settings = upgraded;
         } else if (local[LEGACY_KEY]) {
@@ -221,50 +254,44 @@ globalThis.TCH = (() => {
         settings.users = settings.users || [];
         settings.badges = settings.badges || [];
 
-        const badgeIndex = readIndex(local[INDEX_KEY]);
         // Rejoué à chaque chargement, pas au fil d'une migration : ajouter un
         // identifiant à IGNORED_BADGE_IDS suffit alors à purger ce qui a déjà
-        // été découvert, sans nouvelle version de schéma.
-        const purged = purgeIgnored(settings, badgeIndex);
+        // été retenu, sans nouvelle version de schéma.
+        const purged = purgeIgnored(settings);
 
         if (migrated || purged) await saveSettings(settings);
-        if (purged) await saveBadgeIndex(badgeIndex);
+        // L'index a été replié dans les règles : la clé n'a plus lieu d'être.
+        if (migrated && local[INDEX_KEY]) await chrome.storage.local.remove(INDEX_KEY);
 
-        return { settings, badgeIndex };
+        return { settings };
     }
 
-    // Retire de l'index les badges ignorés, et les entrées de réglages qui n'ont
-    // plus aucun imageId légitime. Un badge jamais indexé est laissé tel quel :
-    // c'est le cas des réglages migrés, dont les imageIds ne sont pas connus.
-    function purgeIgnored(settings, badgeIndex) {
-        const fromIgnored = new Set();
-        const fromOthers = new Set();
+    // Retire les imageIds ignorés des règles, et les règles qui n'en avaient
+    // que de tels. Une règle sans aucun imageId est laissée tranquille : elle
+    // vient d'une migration et attend sa première rencontre.
+    function purgeIgnored(settings) {
         let changed = false;
+        const kept = [];
 
-        for (const [imageId, ref] of Object.entries(badgeIndex)) {
-            if (isIgnoredBadge(imageId)) {
-                fromIgnored.add(ref.key);
-                delete badgeIndex[imageId];
-                changed = true;
-            } else {
-                fromOthers.add(ref.key);
+        for (const badge of settings.badges) {
+            const imageIds = badge.imageIds || [];
+            const clean = imageIds.filter((imageId) => !isIgnoredBadge(imageId));
+            if (clean.length === imageIds.length) {
+                kept.push(badge);
+                continue;
             }
+            changed = true;
+            // Tous ses imageIds étaient ignorés : la règle n'a plus d'objet.
+            if (clean.length) kept.push({ ...badge, imageIds: clean });
         }
 
-        const doomed = [...fromIgnored].filter((key) => !fromOthers.has(key));
-        if (doomed.length) {
-            settings.badges = settings.badges.filter(
-                (badge) => !doomed.includes(badge.key)
-            );
-        }
-
+        if (changed) settings.badges = kept;
         return changed;
     }
 
-    // L'index v2 associait un imageId à une simple chaîne de caractères. Le
-    // nouveau format porte aussi la portée ; l'ancien est jeté plutôt que
-    // converti, c'est un cache qui se reconstruit dès le premier message lu.
-    function readIndex(raw) {
+    // Index v2-v5 : imageId -> { key, scope }. Les valeurs de la v2, de simples
+    // chaînes, sont ignorées — elles ne portaient pas la portée.
+    function readLegacyIndex(raw) {
         if (!raw) return {};
         const index = {};
         for (const [imageId, value] of Object.entries(raw)) {
@@ -277,18 +304,6 @@ globalThis.TCH = (() => {
 
     const saveSettings = (settings) =>
         chrome.storage.sync.set({ [SETTINGS_KEY]: settings });
-
-    const saveBadgeIndex = (badgeIndex) =>
-        chrome.storage.local.set({ [INDEX_KEY]: badgeIndex });
-
-    // clé de badge -> un imageId représentatif, pour afficher l'icône réelle.
-    function badgeSamples(badgeIndex) {
-        const samples = new Map();
-        for (const [imageId, entry] of Object.entries(badgeIndex || {})) {
-            if (entry && !samples.has(entry.key)) samples.set(entry.key, imageId);
-        }
-        return samples;
-    }
 
     return {
         VERSION,
@@ -309,16 +324,17 @@ globalThis.TCH = (() => {
         isValidLogin,
         extractBadgeId,
         badgeImageUrl,
+        badgeIcon,
         pickColor,
         makeKey,
+        makeBadge,
         keyScope,
         isChannelScope,
         migrateLegacy,
         upgradeSettings,
         loadState,
-        readIndex,
+        readLegacyIndex,
+        purgeIgnored,
         saveSettings,
-        saveBadgeIndex,
-        badgeSamples,
     };
 })();

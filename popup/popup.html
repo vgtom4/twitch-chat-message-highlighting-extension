@@ -34,14 +34,14 @@
             <div class="reset-zone">
                 <span class="section-title">Reset</span>
                 <button type="button" class="reset-button" id="resetBadges"
-                    data-label="Forget discovered badges">Forget discovered badges</button>
+                    data-label="Remove all badge rules">Remove all badge rules</button>
                 <button type="button" class="reset-button" id="resetUsers"
                     data-label="Remove all users">Remove all users</button>
                 <button type="button" class="reset-button danger" id="resetAll"
                     data-label="Reset everything">Reset everything</button>
                 <p class="empty-hint">
-                    Forgotten badges reappear on their own as soon as they show up
-                    in chat again, but their colors are lost.
+                    Removed badges go back to "Seen in this chat" and can be picked
+                    again, but their colors are lost.
                 </p>
             </div>
         </section>
@@ -77,6 +77,15 @@
                 button on its left edge.
             </p>
         </details>
+
+        <div class="field">
+            <span class="section-title">Seen in this chat</span>
+            <div class="seen-strip" id="seenBadges"></div>
+            <p class="empty-hint" id="seenHint">
+                Nothing yet. Badges show up here as messages arrive; click one to
+                start highlighting it.
+            </p>
+        </div>
 
         <details id="globalBadgesDetails" class="list-element">
             <summary><span id="globalBadgesCount">0</span> Global badges</summary>
