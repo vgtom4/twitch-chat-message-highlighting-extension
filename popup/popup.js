@@ -1,6 +1,5 @@
 // Le popup ne fait qu'écrire dans chrome.storage : les onglets Twitch ouverts
-// réagissent d'eux-mêmes via chrome.storage.onChanged. Plus de service worker
-// ni d'injection de script à la demande.
+// réagissent d'eux-mêmes via chrome.storage.onChanged.
 
 (() => {
     "use strict";
@@ -42,8 +41,8 @@
     const { MODE } = TCH;
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
-    // Badges croisés dans le chat de l'onglet actif, sans règle. Lus au moment
-    // d'ouvrir le popup, jamais enregistrés : c'est le clic qui crée la règle.
+    // Badges croisés dans le chat de l'onglet actif, sans règle. Relus auprès
+    // de l'onglet, jamais enregistrés : c'est le clic qui crée la règle.
     let seen = [];
     let currentChannel = null;
 
@@ -213,8 +212,18 @@
     // --- Badges croisés dans le chat ----------------------------------------
 
     // Un clic crée la règle : c'est le seul moment où un badge est enregistré.
-    function adoptBadge(entry) {
-        const scope = TCH.isChannelScope(entry.scope) ? entry.scope : TCH.SCOPE_UNKNOWN;
+    async function adoptBadge(entry) {
+        // Sur une VOD, la chaîne n'est identifiée qu'une fois le player chargé,
+        // parfois après l'ouverture du popup : on la redemande avant de figer
+        // la portée.
+        await syncTab();
+
+        // La chaîne de l'onglet fait foi : un badge croisé dans ce chat lui
+        // appartient, même si sa portée n'était pas encore connue quand il est
+        // apparu dans la liste.
+        const scope =
+            currentChannel ||
+            (TCH.isChannelScope(entry.scope) ? entry.scope : TCH.SCOPE_UNKNOWN);
 
         // Déjà une règle sous ce libellé et cette portée : on lui rattache
         // simplement l'imageId au lieu de créer un doublon.
@@ -235,7 +244,8 @@
             ];
         }
 
-        seen = seen.filter((item) => item.imageId !== entry.imageId);
+        // L'entrée reste dans `seen`, où `renderSeen` l'écarte tant qu'elle a
+        // une règle : retirer cette règle la repropose aussitôt.
         persist();
         render();
     }
@@ -324,8 +334,8 @@
         remove.title = `Remove the rule for ${badge.label || badge.key}`;
         remove.addEventListener("click", () => {
             settings.badges = settings.badges.filter((other) => other.key !== badge.key);
-            persist();
             render();
+            persist().then(syncTab);
         });
         slot.appendChild(remove);
         name.appendChild(slot);
@@ -541,8 +551,8 @@
 
     onReset(els.resetBadges, () => {
         settings.badges = [];
-        persist();
         render();
+        persist().then(syncTab);
     });
 
     onReset(els.resetUsers, () => {
@@ -553,8 +563,8 @@
 
     onReset(els.resetAll, () => {
         settings = { ...TCH.DEFAULT_SETTINGS, users: [], badges: [] };
-        persist();
         render();
+        persist().then(syncTab);
     });
 
     // Les réglages peuvent changer sous nos pieds : autre onglet, ou entretien
@@ -563,6 +573,9 @@
         if (area === "sync" && changes[TCH.SETTINGS_KEY]) {
             settings = { ...TCH.DEFAULT_SETTINGS, ...changes[TCH.SETTINGS_KEY].newValue };
             render();
+            // Cet entretien accompagne souvent une chaîne identifiée après
+            // coup : l'occasion de reprendre l'état de l'onglet.
+            syncTab();
         }
     });
 
@@ -582,14 +595,26 @@
         }
     }
 
-    async function init() {
-        const [state, tabState] = await Promise.all([TCH.loadState(), askTab()]);
-        settings = state.settings;
+    function applyTabState(tabState) {
         currentChannel =
             tabState.channel && tabState.channel !== TCH.SCOPE_UNKNOWN ? tabState.channel : null;
         // Ordre d'apparition dans le chat : les badges les plus courants
         // (diffuseur, modérateur, abonné) arrivent en tête.
         seen = tabState.seen || [];
+    }
+
+    // L'état de l'onglet bouge pendant que le popup est ouvert : la chaîne peut
+    // être identifiée après coup, et l'onglet repropose un badge dès qu'on lui
+    // a retiré sa règle.
+    async function syncTab() {
+        applyTabState(await askTab());
+        render();
+    }
+
+    async function init() {
+        const [state, tabState] = await Promise.all([TCH.loadState(), askTab()]);
+        settings = state.settings;
+        applyTabState(tabState);
         render();
     }
 

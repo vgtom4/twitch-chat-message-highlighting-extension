@@ -1,9 +1,9 @@
 // Applique les highlights dans le chat Twitch (live et VOD).
 //
-// Principe : on ne génère plus de CSS par utilisateur. Un MutationObserver pose
-// un attribut + une variable CSS sur chaque ligne au moment où elle apparaît,
-// et la feuille styles.css contient une règle unique. Le coût par message est
-// donc constant, quelle que soit la taille des listes.
+// Principe : un MutationObserver pose un attribut + une variable CSS sur chaque
+// ligne au moment où elle apparaît, et la feuille styles.css contient une règle
+// unique. Le coût par message est donc constant, quelle que soit la taille des
+// listes.
 
 (() => {
     "use strict";
@@ -42,22 +42,32 @@
 
     const WRITE_DEBOUNCE_MS = 1500;
 
+    // Durée pendant laquelle on cherche la chaîne d'une page qui ne la porte
+    // pas dans son URL, et intervalle entre deux tentatives. Passé ce délai, la
+    // page n'en a probablement pas (accueil, /directory...) et on cesse.
+    const CHANNEL_SEARCH_MS = 20000;
+    const CHANNEL_RETRY_MS = 500;
+
     // --- État en mémoire -----------------------------------------------------
-    // Tout est ici plutôt que relu depuis chrome.storage à chaque interaction :
-    // c'était le coût dominant de la v1.
+    // Tout est ici plutôt que relu depuis chrome.storage à chaque interaction,
+    // qui serait le coût dominant.
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
     let badgeByImageId = new Map();
     let badgeByKey = new Map();
     let userByLogin = new Map();
 
-    // Badges croisés dans le chat qui n'ont pas (encore) de règle. Purement en
-    // mémoire, le temps de la session : le popup vient les lire pour les
-    // proposer, et rien n'est enregistré avant que l'utilisateur en choisisse un.
+    // Tous les badges croisés dans ce chat depuis le début de la session.
+    // Purement en mémoire : le popup vient les lire pour proposer ceux qui n'ont
+    // pas de règle, et rien n'est enregistré avant qu'il en choisisse un. On
+    // garde aussi ceux qui en ont reçu une, pour pouvoir les reproposer si la
+    // règle est supprimée sans que le badge repasse dans le chat.
     const seenBadges = new Map(); // imageId -> { imageId, label, scope }
 
     let channel = TCH.SCOPE_UNKNOWN;
     let knownPath = "";
+    let channelDeadline = 0;
+    let channelTimer = null;
     let container = null;
     let lineObserver = null;
     let settingsDirty = false;
@@ -74,11 +84,6 @@
             for (const imageId of badge.imageIds || []) {
                 badgeByImageId.set(imageId, badge);
             }
-        }
-
-        // Un badge qui vient de recevoir une règle n'est plus à proposer.
-        for (const imageId of seenBadges.keys()) {
-            if (badgeByImageId.has(imageId)) seenBadges.delete(imageId);
         }
     }
 
@@ -115,10 +120,35 @@
         return channelFromDom();
     }
 
+    // Sur une page de VOD (/videos/<id>), le nom de la chaîne n'est pas dans
+    // l'URL : il faut attendre le player, qui monte parfois plusieurs secondes
+    // après le chat. On le cherche donc à intervalle régulier plutôt qu'au fil
+    // des mutations — le chat en produit assez pour épuiser n'importe quel
+    // compteur avant même que le player existe.
+    function searchChannel() {
+        if (channelTimer || channel !== TCH.SCOPE_UNKNOWN) return;
+        if (Date.now() > channelDeadline) return;
+
+        channelTimer = setTimeout(() => {
+            channelTimer = null;
+            // `refreshChannel` se relance de lui-même tant qu'il ne trouve pas.
+            if (refreshChannel()) rescanAll();
+        }, CHANNEL_RETRY_MS);
+    }
+
     // Renvoie true si la chaîne a changé.
     function refreshChannel() {
-        knownPath = location.pathname;
-        const found = detectChannel() || TCH.SCOPE_UNKNOWN;
+        if (location.pathname !== knownPath) {
+            knownPath = location.pathname;
+            channelDeadline = Date.now() + CHANNEL_SEARCH_MS;
+        }
+
+        const changed = applyChannel(detectChannel() || TCH.SCOPE_UNKNOWN);
+        searchChannel();
+        return changed;
+    }
+
+    function applyChannel(found) {
         if (found === channel) return false;
 
         const wasUnknown = channel === TCH.SCOPE_UNKNOWN;
@@ -329,7 +359,7 @@
     // --- Bouton d'action au survol -------------------------------------------
     // Un seul élément réutilisé, déplacé de ligne en ligne. `insertBefore` le
     // détache automatiquement de son parent précédent, donc aucune allocation
-    // ni balayage du document par survol (la v1 faisait les deux).
+    // ni balayage du document par survol.
 
     let actionButton = null;
     let hostLine = null;
@@ -451,8 +481,8 @@
 
         container = found;
         container.addEventListener("mouseover", onMouseOver);
-        // La souris quitte le chat sans passer par une autre ligne : sans ça le
-        // bouton restait affiché sur la dernière ligne survolée.
+        // La souris peut quitter le chat sans passer par une autre ligne : le
+        // bouton doit alors être retiré de la dernière ligne survolée.
         container.addEventListener("mouseleave", detachButton);
         lineObserver = new MutationObserver(onMutations);
         lineObserver.observe(container, { childList: true, subtree: true });
@@ -464,22 +494,12 @@
     // de caractères tant que rien ne bouge.
     function watchForChat() {
         let scheduled = false;
-        // Sur une page de VOD, le nom de la chaîne n'arrive qu'avec le player :
-        // on retente tant qu'on ne l'a pas, sans sonder indéfiniment une page qui
-        // n'en a pas. Le compteur repart à chaque navigation.
-        const MAX_CHANNEL_ATTEMPTS = 40;
-        let attempts = 0;
-        let attemptsPath = knownPath;
 
         const mountObserver = new MutationObserver(() => {
-            if (location.pathname !== attemptsPath) {
-                attemptsPath = location.pathname;
-                attempts = 0;
-            }
-
+            // La recherche de la chaîne a son propre minuteur ; tant qu'elle
+            // dure, une mutation reste une occasion de retenter tout de suite.
             const searchingChannel =
-                channel === TCH.SCOPE_UNKNOWN && attempts < MAX_CHANNEL_ATTEMPTS;
-            if (searchingChannel) attempts++;
+                channel === TCH.SCOPE_UNKNOWN && Date.now() <= channelDeadline;
 
             const settled =
                 !searchingChannel &&
@@ -499,8 +519,8 @@
     }
 
     // --- Synchronisation des réglages ---------------------------------------
-    // Remplace l'aller-retour popup -> service worker -> executeScript de la v1.
-    // Tous les onglets ouverts se mettent à jour, y compris en arrière-plan.
+    // Le popup écrit dans le storage, les onglets suivent : tous se mettent à
+    // jour, y compris en arrière-plan.
 
     function onStorageChanged(changes, area) {
         if (area === "sync" && changes[TCH.SETTINGS_KEY]) {
@@ -518,7 +538,12 @@
     // bien l'onglet qu'il recouvre, et évite d'enregistrer quoi que ce soit.
     function onMessage(message, sender, sendResponse) {
         if (message?.type === "tch:getState") {
-            sendResponse({ channel, seen: [...seenBadges.values()] });
+            // Seuls les badges sans règle sont à proposer, mais le tri se fait
+            // ici : la liste, elle, garde tout le monde.
+            const seen = [...seenBadges.values()].filter(
+                (entry) => !badgeByImageId.has(entry.imageId)
+            );
+            sendResponse({ channel, seen });
             return true;
         }
         return false;

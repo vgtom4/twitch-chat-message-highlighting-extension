@@ -9,8 +9,8 @@ globalThis.TCH = (() => {
     const VERSION = 6;
 
     // Un badge comme un utilisateur peut être ignoré, colorer la ligne, ou au
-    // contraire empêcher toute coloration. Le troisième état remplace les
-    // exclusions codées en dur de la v1 (`:not([data-a-user="fossabot"])`).
+    // contraire empêcher toute coloration — de quoi écarter un bot sans avoir à
+    // coder son nom en dur.
     const MODE = { OFF: "off", WHITE: "white", BLACK: "black" };
 
     // Réglages utilisateur : synchronisés entre les machines, volume faible.

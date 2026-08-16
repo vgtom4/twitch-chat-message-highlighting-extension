@@ -59,7 +59,7 @@
             <p id="newUsernameError" class="error" hidden></p>
         </div>
 
-        <details id="usersDetails" class="list-element" open>
+        <details id="usersDetails" class="list-element">
             <summary><span id="usersCount">0</span> Users</summary>
             <table class="rules-table" id="usersTable">
                 <thead>
@@ -77,15 +77,6 @@
                 button on its left edge.
             </p>
         </details>
-
-        <div class="field">
-            <span class="section-title">Seen in this chat</span>
-            <div class="seen-strip" id="seenBadges"></div>
-            <p class="empty-hint" id="seenHint">
-                Nothing yet. Badges show up here as messages arrive; click one to
-                start highlighting it.
-            </p>
-        </div>
 
         <details id="globalBadgesDetails" class="list-element">
             <summary><span id="globalBadgesCount">0</span> Global badges</summary>
@@ -108,6 +99,15 @@
 
         <details id="channelBadgesDetails" class="list-element" open>
             <summary><span id="channelBadgesTitle">This channel</span></summary>
+            <div class="field">
+                <span class="section-title">Seen in this chat</span>
+                <div class="seen-strip" id="seenBadges"></div>
+                <p class="empty-hint" id="seenHint">
+                    Nothing yet. Badges show up here as messages arrive; click one to
+                    start highlighting it.
+                </p>
+            </div>
+            <br>
             <table class="rules-table">
                 <thead>
                     <tr>
