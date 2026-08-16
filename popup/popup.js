@@ -12,6 +12,7 @@
         resetUsers: document.getElementById("resetUsers"),
         resetAll: document.getElementById("resetAll"),
         hoverToggle: document.getElementById("hoverToggle"),
+        chatFilter: document.getElementById("chatFilter"),
         newUsername: document.getElementById("newUsername"),
         newUserMode: document.getElementById("newUserMode"),
         addUserButton: document.getElementById("addUserButton"),
@@ -455,8 +456,10 @@
     function render() {
         els.enabledToggle.checked = settings.enabled;
         els.hoverToggle.checked = settings.showHoverButton;
-        // Le bouton de survol n'a pas de sens si tout est coupé.
+        els.chatFilter.value = settings.chatFilter;
+        // Ces deux réglages n'ont pas de sens si tout est coupé.
         els.hoverToggle.disabled = !settings.enabled;
+        els.chatFilter.disabled = !settings.enabled;
         renderUsers();
         renderSeen();
         renderBadges();
@@ -509,11 +512,17 @@
     els.enabledToggle.addEventListener("change", () => {
         settings.enabled = els.enabledToggle.checked;
         els.hoverToggle.disabled = !settings.enabled;
+        els.chatFilter.disabled = !settings.enabled;
         persist();
     });
 
     els.hoverToggle.addEventListener("change", () => {
         settings.showHoverButton = els.hoverToggle.checked;
+        persist();
+    });
+
+    els.chatFilter.addEventListener("change", () => {
+        settings.chatFilter = els.chatFilter.value;
         persist();
     });
 

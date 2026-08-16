@@ -11,6 +11,9 @@
     const LINE_SELECTOR = ".chat-line__message, .vod-message";
     const BADGE_IMG_SELECTOR = 'img[src*="/badges/v1/"]';
     const HIGHLIGHT_ATTR = "data-tch-highlight";
+    // Une règle retient la ligne sans la peindre.
+    const KEEP_ATTR = "data-tch-keep";
+    const FILTER_ATTR = "data-tch-filter";
     const COLOR_VAR = "--tch-highlight-color";
 
     // Twitch renomme régulièrement ses classes ; on essaie plusieurs pistes et
@@ -39,6 +42,10 @@
         'a[data-test-selector="ChannelLink"]',
         '[data-a-target="user-channel-header-item"] a[href^="/"]',
     ];
+
+    // Verdict d'une ligne reconnue mais non peinte.
+    const KEEP = "keep";
+    const colorOf = (verdict) => (verdict === KEEP ? null : verdict);
 
     const WRITE_DEBOUNCE_MS = 1500;
 
@@ -85,6 +92,16 @@
     }
 
     const hoverButtonAllowed = () => settings.enabled && settings.showHoverButton;
+
+    // Le masquage est purement CSS : le filtre est posé sur la racine.
+    function applyDisplayMode() {
+        const filter = settings.enabled ? settings.chatFilter : TCH.FILTER.ALL;
+        if (filter === TCH.FILTER.ALL) {
+            document.documentElement.removeAttribute(FILTER_ATTR);
+        } else {
+            document.documentElement.setAttribute(FILTER_ATTR, filter);
+        }
+    }
 
     // --- Chaîne courante -----------------------------------------------------
 
@@ -283,19 +300,23 @@
         });
     }
 
-    // Couleur dictée par les badges de la ligne. On parcourt tout même après
+    // Verdict dicté par les badges de la ligne : une couleur, KEEP si une règle
+    // la reconnaît sans la peindre, null sinon. On parcourt tout même après
     // avoir trouvé une couleur : pour alimenter le registre, et parce qu'un
     // badge exclu rencontré plus loin annule la coloration.
-    function badgeColorFor(line) {
+    function badgeVerdictFor(line) {
         let color = null;
+        let kept = false;
         let excluded = false;
         for (const img of line.querySelectorAll(BADGE_IMG_SELECTOR)) {
             const entry = resolveBadge(img);
             if (!entry) continue;
             if (entry.mode === TCH.MODE.BLACK) excluded = true;
-            else if (!color && entry.mode === TCH.MODE.WHITE) color = entry.color;
+            else if (entry.mode === TCH.MODE.WHITE) color = color || entry.color;
+            else kept = true;
         }
-        return excluded ? null : color;
+        if (excluded) return null;
+        return color || (kept ? KEEP : null);
     }
 
     // --- Lignes de chat ------------------------------------------------------
@@ -313,15 +334,17 @@
     // Une règle nominative l'emporte toujours sur une règle de badge : un
     // utilisateur explicitement mis en avant le reste même s'il porte un badge
     // exclu, et inversement.
-    function colorFor(line) {
+    function verdictFor(line) {
         const user = userByLogin.get(getLogin(line));
         if (user?.mode === TCH.MODE.BLACK) return null;
         if (user?.mode === TCH.MODE.WHITE) return user.color || settings.defaultColor;
-        return badgeColorFor(line);
+        return badgeVerdictFor(line) || (user ? KEEP : null);
     }
 
     function processLine(line) {
-        const color = settings.enabled ? colorFor(line) : null;
+        const verdict = settings.enabled ? verdictFor(line) : null;
+        const color = colorOf(verdict);
+
         if (color) {
             line.style.setProperty(COLOR_VAR, color);
             line.setAttribute(HIGHLIGHT_ATTR, "");
@@ -329,6 +352,7 @@
             line.style.removeProperty(COLOR_VAR);
             line.removeAttribute(HIGHLIGHT_ATTR);
         }
+        line.toggleAttribute(KEEP_ATTR, verdict === KEEP);
     }
 
     function processTree(root) {
@@ -386,7 +410,7 @@
         const existing = userByLogin.get(login);
         const mode = existing
             ? TCH.MODE.OFF
-            : badgeColorFor(hostLine)
+            : colorOf(badgeVerdictFor(hostLine))
             ? TCH.MODE.BLACK
             : TCH.MODE.WHITE;
 
@@ -523,6 +547,7 @@
             settings.badges = settings.badges || [];
             rebuildLookups();
             if (!hoverButtonAllowed()) detachButton();
+            applyDisplayMode();
             rescanAll();
         }
     }
@@ -546,6 +571,7 @@
         const state = await TCH.loadState();
         settings = state.settings;
         rebuildLookups();
+        applyDisplayMode();
 
         chrome.storage.onChanged.addListener(onStorageChanged);
         chrome.runtime.onMessage.addListener(onMessage);

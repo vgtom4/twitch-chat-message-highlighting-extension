@@ -160,8 +160,8 @@ conservées.
 - ~~Ajouter bouton d'activation de la fonctionnalité de highlight depuis les messages de chat~~
 - ~~Add button on item list (whitelist | blacklist) to switch between whitelist and blacklist~~ (colonne Mode de la table)
 - ~~Add button "eye" on item list (whitelist | blacklist) to enable or disable traitement de l'user (to keep it on the list)~~ (mode `off`)
-- Add button to hide whitelisted users
-- Add button to hide blacklisted users
+- ~~Add button to hide whitelisted users (select in popup settings)~~
+- ~~Add button to hide blacklisted users (select in popup settings)~~
 
 ### Issues :
 

@@ -6,12 +6,17 @@
 globalThis.TCH = (() => {
     "use strict";
 
-    const VERSION = 6;
+    const VERSION = 7;
 
     // Un badge comme un utilisateur peut être ignoré, colorer la ligne, ou au
     // contraire empêcher toute coloration — de quoi écarter un bot sans avoir à
     // coder son nom en dur.
     const MODE = { OFF: "off", WHITE: "white", BLACK: "black" };
+
+    // Lignes de chat visibles. `KNOWN` ajoute aux lignes peintes celles dont
+    // une règle existe sans couleur : le troisième état sert alors de filtre
+    // sans coloration.
+    const FILTER = { ALL: "all", HIGHLIGHTED: "highlighted", KNOWN: "known" };
 
     // Réglages utilisateur : synchronisés entre les machines, volume faible.
     // Seuls les badges explicitement retenus y figurent — les badges croisés
@@ -70,6 +75,7 @@ globalThis.TCH = (() => {
         enabled: true,
         // Permet de garder les couleurs sans le bouton dans le chat.
         showHoverButton: true,
+        chatFilter: FILTER.ALL,
         // Couleur des utilisateurs qui n'en ont pas choisi une.
         defaultColor: "#0c6bb8",
         // [{ login, mode, color }]
@@ -178,7 +184,8 @@ globalThis.TCH = (() => {
     // ceux qui étaient en réalité propres à une chaîne se re-scinderont à la
     // prochaine visite. v3 séparait les utilisateurs en deux listes et ne
     // connaissait que deux états pour un badge. v5 gardait la correspondance
-    // vers le DOM dans un index séparé, replié ici dans `imageIds`.
+    // vers le DOM dans un index séparé, replié ici dans `imageIds`. v6 n'avait
+    // pas de filtre d'affichage.
     function upgradeSettings(settings, legacyIndex) {
         if (settings.version === VERSION) return settings;
 
@@ -226,6 +233,7 @@ globalThis.TCH = (() => {
         delete upgraded.whitelisted;
         delete upgraded.blacklisted;
         delete upgraded.whitelistColor;
+        delete upgraded.onlyHighlighted;
         return upgraded;
     }
 
@@ -308,6 +316,7 @@ globalThis.TCH = (() => {
     return {
         VERSION,
         MODE,
+        FILTER,
         makeUser,
         SETTINGS_KEY,
         INDEX_KEY,

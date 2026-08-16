@@ -7,6 +7,15 @@
     background-color: var(--tch-highlight-color) !important;
 }
 
+/* Filtre d'affichage, posé sur <html>. `known` épargne en plus les lignes
+   qu'une règle reconnaît sans les peindre. */
+[data-tch-filter="highlighted"] .chat-line__message:not([data-tch-highlight]),
+[data-tch-filter="highlighted"] .vod-message:not([data-tch-highlight]),
+[data-tch-filter="known"] .chat-line__message:not([data-tch-highlight]):not([data-tch-keep]),
+[data-tch-filter="known"] .vod-message:not([data-tch-highlight]):not([data-tch-keep]) {
+    display: none;
+}
+
 /* Ancrage du bouton d'action, posé uniquement sur la ligne survolée. */
 .tch-hover-host {
     position: relative;
