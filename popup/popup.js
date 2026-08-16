@@ -65,10 +65,7 @@
 
     // Deux bascules plutôt qu'un menu : le troisième état est simplement
     // "aucune des deux", et un clic suffit pour passer de l'un à l'autre.
-    function modeCell(entry, onChange) {
-        const cell = document.createElement("td");
-        cell.className = "col-mode";
-
+    function modeGroup(entry, onChange) {
         const group = document.createElement("div");
         group.className = "mode-group";
 
@@ -89,7 +86,13 @@
             group.appendChild(button);
         }
 
-        cell.appendChild(group);
+        return group;
+    }
+
+    function modeCell(entry, onChange) {
+        const cell = document.createElement("td");
+        cell.className = "col-mode";
+        cell.appendChild(modeGroup(entry, onChange));
         return cell;
     }
 
@@ -213,14 +216,11 @@
 
     // Un clic crée la règle : c'est le seul moment où un badge est enregistré.
     async function adoptBadge(entry) {
-        // Sur une VOD, la chaîne n'est identifiée qu'une fois le player chargé,
-        // parfois après l'ouverture du popup : on la redemande avant de figer
-        // la portée.
+        // Sur une VOD, la chaîne peut n'être identifiée qu'après l'ouverture du
+        // popup : on la redemande avant de figer la portée, car c'est elle qui
+        // fait foi et non celle mémorisée à l'apparition du badge.
         await syncTab();
 
-        // La chaîne de l'onglet fait foi : un badge croisé dans ce chat lui
-        // appartient, même si sa portée n'était pas encore connue quand il est
-        // apparu dans la liste.
         const scope =
             currentChannel ||
             (TCH.isChannelScope(entry.scope) ? entry.scope : TCH.SCOPE_UNKNOWN);
@@ -244,8 +244,8 @@
             ];
         }
 
-        // L'entrée reste dans `seen`, où `renderSeen` l'écarte tant qu'elle a
-        // une règle : retirer cette règle la repropose aussitôt.
+        // `renderSeen` écarte l'entrée tant qu'elle a une règle : la retirer de
+        // `seen` empêcherait de la reproposer.
         persist();
         render();
     }
@@ -464,6 +464,18 @@
 
     // --- Actions -------------------------------------------------------------
 
+    // Mode du prochain utilisateur ajouté.
+    const newUser = { mode: MODE.WHITE };
+
+    function renderNewUserMode() {
+        els.newUserMode.replaceChildren(
+            modeGroup(newUser, (mode) => {
+                newUser.mode = mode;
+                renderNewUserMode();
+            })
+        );
+    }
+
     function addUser() {
         const login = els.newUsername.value.trim().toLowerCase();
 
@@ -478,13 +490,15 @@
         els.newUsername.value = "";
 
         const existing = settings.users.find((user) => user.login === login);
-        if (existing) existing.mode = els.newUserMode.value;
-        else settings.users = [...settings.users, TCH.makeUser(login, els.newUserMode.value)];
+        if (existing) existing.mode = newUser.mode;
+        else settings.users = [...settings.users, TCH.makeUser(login, newUser.mode)];
 
         els.usersDetails.open = true;
         persist();
         renderUsers();
     }
+
+    renderNewUserMode();
 
     els.addUserButton.addEventListener("click", addUser);
     els.newUsername.addEventListener("keydown", (event) => {
@@ -573,8 +587,7 @@
         if (area === "sync" && changes[TCH.SETTINGS_KEY]) {
             settings = { ...TCH.DEFAULT_SETTINGS, ...changes[TCH.SETTINGS_KEY].newValue };
             render();
-            // Cet entretien accompagne souvent une chaîne identifiée après
-            // coup : l'occasion de reprendre l'état de l'onglet.
+            // Souvent le signe d'une chaîne identifiée après coup.
             syncTab();
         }
     });
@@ -603,9 +616,8 @@
         seen = tabState.seen || [];
     }
 
-    // L'état de l'onglet bouge pendant que le popup est ouvert : la chaîne peut
-    // être identifiée après coup, et l'onglet repropose un badge dès qu'on lui
-    // a retiré sa règle.
+    // L'état de l'onglet bouge pendant que le popup est ouvert : chaîne
+    // identifiée après coup, badge reproposé après le retrait d'une règle.
     async function syncTab() {
         applyTabState(await askTab());
         render();

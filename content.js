@@ -42,9 +42,8 @@
 
     const WRITE_DEBOUNCE_MS = 1500;
 
-    // Durée pendant laquelle on cherche la chaîne d'une page qui ne la porte
-    // pas dans son URL, et intervalle entre deux tentatives. Passé ce délai, la
-    // page n'en a probablement pas (accueil, /directory...) et on cesse.
+    // Recherche de la chaîne d'une page qui ne la porte pas dans son URL. Passé
+    // ce délai, la page n'en a probablement pas (accueil, /directory...).
     const CHANNEL_SEARCH_MS = 20000;
     const CHANNEL_RETRY_MS = 500;
 
@@ -57,11 +56,9 @@
     let badgeByKey = new Map();
     let userByLogin = new Map();
 
-    // Tous les badges croisés dans ce chat depuis le début de la session.
-    // Purement en mémoire : le popup vient les lire pour proposer ceux qui n'ont
-    // pas de règle, et rien n'est enregistré avant qu'il en choisisse un. On
-    // garde aussi ceux qui en ont reçu une, pour pouvoir les reproposer si la
-    // règle est supprimée sans que le badge repasse dans le chat.
+    // Tous les badges croisés dans ce chat depuis le début de la session, y
+    // compris ceux qui ont une règle : la retirer les repropose aussitôt. Rien
+    // n'est enregistré avant que le popup en choisisse un.
     const seenBadges = new Map(); // imageId -> { imageId, label, scope }
 
     let channel = TCH.SCOPE_UNKNOWN;
@@ -120,18 +117,16 @@
         return channelFromDom();
     }
 
-    // Sur une page de VOD (/videos/<id>), le nom de la chaîne n'est pas dans
-    // l'URL : il faut attendre le player, qui monte parfois plusieurs secondes
-    // après le chat. On le cherche donc à intervalle régulier plutôt qu'au fil
-    // des mutations — le chat en produit assez pour épuiser n'importe quel
-    // compteur avant même que le player existe.
+    // Sur une VOD, le nom n'arrive qu'avec le player, parfois plusieurs
+    // secondes après le chat. On le cherche au rythme d'un minuteur, pas des
+    // mutations : le chat en produit trop pour servir de repère.
     function searchChannel() {
         if (channelTimer || channel !== TCH.SCOPE_UNKNOWN) return;
         if (Date.now() > channelDeadline) return;
 
         channelTimer = setTimeout(() => {
             channelTimer = null;
-            // `refreshChannel` se relance de lui-même tant qu'il ne trouve pas.
+            // `refreshChannel` se relance tant qu'il ne trouve pas.
             if (refreshChannel()) rescanAll();
         }, CHANNEL_RETRY_MS);
     }
@@ -496,8 +491,7 @@
         let scheduled = false;
 
         const mountObserver = new MutationObserver(() => {
-            // La recherche de la chaîne a son propre minuteur ; tant qu'elle
-            // dure, une mutation reste une occasion de retenter tout de suite.
+            // Pendant la recherche, une mutation est une occasion de retenter.
             const searchingChannel =
                 channel === TCH.SCOPE_UNKNOWN && Date.now() <= channelDeadline;
 
@@ -538,8 +532,7 @@
     // bien l'onglet qu'il recouvre, et évite d'enregistrer quoi que ce soit.
     function onMessage(message, sender, sendResponse) {
         if (message?.type === "tch:getState") {
-            // Seuls les badges sans règle sont à proposer, mais le tri se fait
-            // ici : la liste, elle, garde tout le monde.
+            // Seuls les badges sans règle sont à proposer.
             const seen = [...seenBadges.values()].filter(
                 (entry) => !badgeByImageId.has(entry.imageId)
             );

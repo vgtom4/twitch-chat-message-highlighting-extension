@@ -50,10 +50,7 @@
             <label for="newUsername" class="section-title">Add a user</label>
             <div class="add-username-container">
                 <input type="text" id="newUsername" placeholder="Username..." autocomplete="off" spellcheck="false">
-                <select id="newUserMode">
-                    <option value="white" selected>Highlight</option>
-                    <option value="black">Exclude</option>
-                </select>
+                <div id="newUserMode" class="new-user-mode" role="group" aria-label="Mode"></div>
                 <button id="addUserButton">Add</button>
             </div>
             <p id="newUsernameError" class="error" hidden></p>

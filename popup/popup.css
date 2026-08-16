@@ -129,10 +129,19 @@ button:hover {
     gap: 0.5rem;
 }
 
-.add-username-container > input,
-.add-username-container > select {
+.add-username-container > input {
     flex-grow: 1;
     min-width: 0;
+}
+
+/* La bascule tient lieu de champ : elle s'aligne sur la hauteur de l'input. */
+.new-user-mode {
+    display: flex;
+}
+
+.new-user-mode .mode-button {
+    padding: 0 0.7rem;
+    font-size: 15px;
 }
 
 .error {
