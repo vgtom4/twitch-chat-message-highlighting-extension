@@ -6,10 +6,16 @@
 globalThis.TCH = (() => {
     "use strict";
 
-    // Firefox n'expose les promesses que sur `browser` : sur `chrome`, les
-    // mêmes méthodes n'attendent qu'un callback et renvoient `undefined`. Tout
-    // le code étant écrit en `await`, on prend `browser` quand il existe.
-    const chrome = globalThis.browser ?? globalThis.chrome;
+    // Le namespace des APIs d'extension, choisi une fois ici pour les deux
+    // contextes : le content script et le popup le reprennent par `TCH.api`.
+    //
+    // Sous Firefox, `chrome.*` n'accepte que des callbacks et renvoie
+    // `undefined` — seul `browser.*` donne des promesses, et tout ce code est
+    // écrit en `await`. Sous Chrome, `chrome.*` renvoie des promesses depuis le
+    // MV3, mais un `browser` existe aussi désormais **sans être un alias
+    // complet** : s'y fier casse `storage`. On ne retient donc `browser` que
+    // s'il porte réellement la méthode dont on se sert.
+    const api = globalThis.browser?.storage?.sync?.set ? globalThis.browser : globalThis.chrome;
 
     const VERSION = 7;
 
@@ -146,7 +152,7 @@ globalThis.TCH = (() => {
 
     const makeUser = (login, mode, color) => ({ login, mode, color: color || null });
 
-    // v1 stockait tout dans chrome.storage.local sous une seule clé, avec des
+    // v1 stockait tout dans le storage local sous une seule clé, avec des
     // badges codés en dur reconnus par leur `alt`. On conserve les listes
     // d'utilisateurs et les couleurs choisies ; les imageIds se rempliront
     // d'eux-mêmes à la première lecture du chat.
@@ -245,8 +251,8 @@ globalThis.TCH = (() => {
     // Renvoie les réglages, en migrant depuis v1-v5 si nécessaire.
     async function loadState() {
         const [synced, local] = await Promise.all([
-            chrome.storage.sync.get(SETTINGS_KEY),
-            chrome.storage.local.get([INDEX_KEY, LEGACY_KEY]),
+            api.storage.sync.get(SETTINGS_KEY),
+            api.storage.local.get([INDEX_KEY, LEGACY_KEY]),
         ]);
 
         let settings = synced[SETTINGS_KEY];
@@ -274,7 +280,7 @@ globalThis.TCH = (() => {
 
         if (migrated || purged) await saveSettings(settings);
         // L'index a été replié dans les règles : la clé n'a plus lieu d'être.
-        if (migrated && local[INDEX_KEY]) await chrome.storage.local.remove(INDEX_KEY);
+        if (migrated && local[INDEX_KEY]) await api.storage.local.remove(INDEX_KEY);
 
         return { settings };
     }
@@ -316,9 +322,10 @@ globalThis.TCH = (() => {
     }
 
     const saveSettings = (settings) =>
-        chrome.storage.sync.set({ [SETTINGS_KEY]: settings });
+        api.storage.sync.set({ [SETTINGS_KEY]: settings });
 
     return {
+        api,
         VERSION,
         MODE,
         FILTER,

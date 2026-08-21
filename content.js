@@ -8,8 +8,8 @@
 (() => {
     "use strict";
 
-    // Voir shared.js : `browser` d'abord, pour les promesses sous Firefox.
-    const chrome = globalThis.browser ?? globalThis.chrome;
+    // Le choix entre `chrome` et `browser` est fait une fois dans shared.js.
+    const api = TCH.api;
 
     const LINE_SELECTOR = ".chat-line__message, .vod-message";
     const BADGE_IMG_SELECTOR = 'img[src*="/badges/v1/"]';
@@ -58,7 +58,7 @@
     const CHANNEL_RETRY_MS = 500;
 
     // --- État en mémoire -----------------------------------------------------
-    // Tout est ici plutôt que relu depuis chrome.storage à chaque interaction,
+    // Tout est ici plutôt que relu depuis le storage à chaque interaction,
     // qui serait le coût dominant.
 
     let settings = { ...TCH.DEFAULT_SETTINGS };
@@ -576,8 +576,8 @@
         rebuildLookups();
         applyDisplayMode();
 
-        chrome.storage.onChanged.addListener(onStorageChanged);
-        chrome.runtime.onMessage.addListener(onMessage);
+        api.storage.onChanged.addListener(onStorageChanged);
+        api.runtime.onMessage.addListener(onMessage);
         window.addEventListener("pagehide", flushWrites);
 
         attachToChat();

@@ -6,6 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Twitch Highlighter Messages</title>
     <link rel="stylesheet" href="popup.css">
+    <!-- Vendoré : la CSP de MV3 interdit tout script distant (CDN). Chargé
+         après popup.css : à spécificité égale, ses règles doivent l'emporter,
+         sinon les styles génériques de `button` et `input[type=text]` de ce
+         popup déforment le panneau du sélecteur. -->
+    <link rel="stylesheet" href="../vendor/coloris/coloris.css">
 </head>
 
 <body>
@@ -37,7 +42,10 @@
 
             <div class="setting-row">
                 <label for="defaultColor">Default highlight color</label>
-                <input type="color" id="defaultColor">
+                <!-- Le contrôle est monté ici par popup.js : c'est le même que
+                     dans les tables (disque + champ lié au sélecteur), et c'est
+                     lui qui porte l'id désigné par la label ci-dessus. --><span
+                    id="defaultColorSlot"></span>
             </div>
 
             <div class="reset-zone">
@@ -164,6 +172,7 @@
 
     </div>
 
+    <script src="../vendor/coloris/coloris.js"></script>
     <script src="../shared.js"></script>
     <script src="popup.js"></script>
 </body>

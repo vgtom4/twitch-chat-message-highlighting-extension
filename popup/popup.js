@@ -1,11 +1,11 @@
-// Le popup ne fait qu'écrire dans chrome.storage : les onglets Twitch ouverts
-// réagissent d'eux-mêmes via chrome.storage.onChanged.
+// Le popup ne fait qu'écrire dans le storage : les onglets Twitch ouverts
+// réagissent d'eux-mêmes via `storage.onChanged`.
 
 (() => {
     "use strict";
 
-    // Voir shared.js : `browser` d'abord, pour les promesses sous Firefox.
-    const chrome = globalThis.browser ?? globalThis.chrome;
+    // Le choix entre `chrome` et `browser` est fait une fois dans shared.js.
+    const api = TCH.api;
 
     const els = {
         enabledToggle: document.getElementById("enabledToggle"),
@@ -20,7 +20,7 @@
         newUserMode: document.getElementById("newUserMode"),
         addUserButton: document.getElementById("addUserButton"),
         newUsernameError: document.getElementById("newUsernameError"),
-        defaultColor: document.getElementById("defaultColor"),
+        defaultColorSlot: document.getElementById("defaultColorSlot"),
         seenBadges: document.getElementById("seenBadges"),
         seenHint: document.getElementById("seenHint"),
         usersBody: document.getElementById("usersBody"),
@@ -65,6 +65,104 @@
 
     const clearError = () => (els.newUsernameError.hidden = true);
 
+    // --- Choix d'une couleur -------------------------------------------------
+
+    // Le seul contrôle visible est un disque de la couleur retenue. Le champ
+    // texte qui le recouvre, invisible, est celui auquel Coloris est lié : il
+    // reçoit le clic, porte la valeur et émet les événements.
+    //
+    // Pourquoi pas `input[type=color]` : Firefox en ouvre le sélecteur dans une
+    // fenêtre extérieure au popup, qui perd alors le focus et se ferme. Son
+    // document détruit, l'événement `change` n'arrive jamais et la couleur est
+    // perdue. Coloris dessine son panneau dans le document du popup, donc rien
+    // ne le ferme — et les deux navigateurs suivent le même chemin.
+
+    // Raccourcis proposés sous le dégradé : la couleur par défaut, puis celles
+    // attribuées automatiquement — celles qu'on retrouve déjà dans les règles.
+    // `Set` pour ne pas afficher deux fois la même case si ces listes se
+    // recoupent un jour.
+    const SWATCHES = [...new Set([TCH.DEFAULT_SETTINGS.defaultColor, ...TCH.AUTO_COLORS])];
+
+    Coloris({
+        // `wrap` avant `el`, et ce n'est pas cosmétique : Coloris parcourt les
+        // clés dans l'ordre, et c'est le traitement de `el` qui enveloppe les
+        // champs déjà présents. L'annoncer après serait trop tard.
+        //
+        // Le disque est notre propre élément : ni vignette ni bouton à ajouter
+        // autour du champ. Le wrapper de Coloris, lui, casserait le contrôle —
+        // le champ y est repositionné, donc plus rien ne recouvre le disque.
+        wrap: false,
+        // Notre classe, et non son `[data-coloris]` par défaut : au chargement,
+        // Coloris enveloppe ce que ce sélecteur par défaut désigne, avant même
+        // que la configuration ci-dessus ne soit lue. Un marqueur à nous met le
+        // contrôle hors de portée de cette passe.
+        //
+        // Sélecteur en chaîne : l'écoute est alors déléguée au document, donc
+        // les champs des lignes redessinées ensuite sont pris en charge sans
+        // réinitialisation. `:enabled` est réévalué à chaque clic : une règle
+        // exclue, dont le champ est désactivé, n'ouvre rien.
+        el: ".color-input:enabled",
+        themeMode: "dark",
+        format: "hex",
+        // Une règle ne stocke que #rrggbb : pas de canal alpha à choisir.
+        alpha: false,
+        swatches: SWATCHES,
+    });
+
+    // Renvoie `{ el, setValue }` : le disque et son champ, prêts à être posés
+    // dans une cellule.
+    function colorControl(value, enabled, onChange) {
+        const title = enabled ? "Highlight color" : "Not used in exclude mode";
+
+        const field = document.createElement("span");
+        field.className = "color-field";
+
+        const swatch = document.createElement("span");
+        swatch.className = "color-swatch";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "color-input";
+        // Désactivé, le champ sort du sélecteur `:enabled` auquel Coloris est
+        // lié : un contrôle grisé n'ouvre rien, sans dépendre du fait qu'un
+        // navigateur n'émette pas de clic sur un champ désactivé.
+        input.disabled = !enabled;
+        input.title = title;
+        input.setAttribute("aria-label", title);
+
+        const setValue = (color) => {
+            input.value = color;
+            swatch.style.backgroundColor = color;
+        };
+        setValue(value);
+
+        // `input` suit le dégradé pendant le glissement : le disque se met à
+        // jour en direct. `change` n'arrive qu'à la fermeture du panneau, et
+        // seulement si la couleur a changé : c'est là qu'on enregistre, plutôt
+        // qu'à chaque pixel parcouru.
+        input.addEventListener("input", () => (swatch.style.backgroundColor = input.value));
+        input.addEventListener("change", () => onChange(input.value));
+
+        field.append(swatch, input);
+        return { el: field, setValue };
+    }
+
+    // Le champ statique du panneau de réglages passe par le même contrôle, pour
+    // n'avoir qu'un seul chemin de code à tenir.
+    const defaultColorControl = (() => {
+        const control = colorControl(settings.defaultColor, true, (color) => {
+            settings.defaultColor = color;
+            persist();
+            renderUsers();
+        });
+        // La <label for="defaultColor"> du panneau désigne le champ, seul
+        // élément étiquetable du contrôle — pas le disque, qui n'est qu'un
+        // <span>.
+        control.el.querySelector("input").id = "defaultColor";
+        els.defaultColorSlot.appendChild(control.el);
+        return control;
+    })();
+
     // --- Cellules communes aux deux tables -----------------------------------
 
     // Deux bascules plutôt qu'un menu : le troisième état est simplement
@@ -103,17 +201,9 @@
     function colorCell(value, enabled, onChange) {
         const cell = document.createElement("td");
         cell.className = "col-color";
-
-        const input = document.createElement("input");
-        input.type = "color";
-        input.value = value;
-        input.disabled = !enabled;
         // Une entrée exclue n'a pas de couleur : on grise plutôt que de retirer
         // le champ, pour que les colonnes restent alignées.
-        input.title = enabled ? "Highlight color" : "Not used in exclude mode";
-        input.addEventListener("change", () => onChange(input.value));
-
-        cell.appendChild(input);
+        cell.appendChild(colorControl(value, enabled, onChange).el);
         return cell;
     }
 
@@ -124,7 +214,7 @@
         els.usersCount.textContent = settings.users.length;
         els.usersHint.hidden = settings.users.length > 0;
         els.usersTable.hidden = settings.users.length === 0;
-        els.defaultColor.value = settings.defaultColor;
+        defaultColorControl.setValue(settings.defaultColor);
 
         [...settings.users]
             .sort((a, b) => a.login.localeCompare(b.login))
@@ -457,6 +547,10 @@
     }
 
     function render() {
+        // Les tables sont reconstruites : le champ auquel le panneau est ancré
+        // va être détaché. Fermer émet au besoin le `change` en attente, donc la
+        // couleur en cours de choix n'est pas perdue.
+        Coloris.close();
         els.enabledToggle.checked = settings.enabled;
         els.hoverToggle.checked = settings.showHoverButton;
         els.chatFilter.value = settings.chatFilter;
@@ -529,12 +623,6 @@
         persist();
     });
 
-    els.defaultColor.addEventListener("change", () => {
-        settings.defaultColor = els.defaultColor.value;
-        persist();
-        renderUsers();
-    });
-
     // --- Panneau de réglages -------------------------------------------------
 
     // Les remises à zéro sont irréversibles : on demande un second clic plutôt
@@ -595,7 +683,7 @@
 
     // Les réglages peuvent changer sous nos pieds : autre onglet, ou entretien
     // d'une règle par un content script.
-    chrome.storage.onChanged.addListener((changes, area) => {
+    api.storage.onChanged.addListener((changes, area) => {
         if (area === "sync" && changes[TCH.SETTINGS_KEY]) {
             settings = { ...TCH.DEFAULT_SETTINGS, ...changes[TCH.SETTINGS_KEY].newValue };
             render();
@@ -610,10 +698,10 @@
     // aussi la chaîne des pages de VOD, que l'URL ne porte pas, et les badges
     // croisés dans ce chat, qui ne sont enregistrés nulle part.
     async function askTab() {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const [tab] = await api.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) return {};
         try {
-            return (await chrome.tabs.sendMessage(tab.id, { type: "tch:getState" })) || {};
+            return (await api.tabs.sendMessage(tab.id, { type: "tch:getState" })) || {};
         } catch {
             // Onglet sans content script (page hors Twitch).
             return {};

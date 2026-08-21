@@ -79,36 +79,6 @@ select {
     cursor: pointer;
 }
 
-input[type="color"] {
-    border-radius: 50%;
-    padding: 0;
-    border: 2px solid #ddd;
-    height: 1.4rem;
-    width: 1.4rem;
-    min-width: 1.4rem;
-    background: none;
-    cursor: pointer;
-}
-
-input[type="color"]:disabled {
-    opacity: 0.25;
-    cursor: not-allowed;
-}
-
-input[type="color"]::-moz-color-swatch {
-    border: none;
-    border-radius: 50%;
-}
-
-input[type="color"]::-webkit-color-swatch-wrapper {
-    padding: 0;
-}
-
-input[type="color"]::-webkit-color-swatch {
-    border: none;
-    border-radius: 50%;
-}
-
 button {
     background-color: #9147ff;
     color: #fff;
@@ -121,6 +91,70 @@ button {
 
 button:hover {
     background-color: #772ce8;
+}
+
+/* Le disque est le seul contrôle visible. Le champ auquel Coloris est lié le
+   recouvre, transparent : il ne sert qu'à recevoir le clic et à porter la
+   valeur, que le disque affiche à sa place. */
+.color-field {
+    position: relative;
+    display: inline-block;
+    width: 1.4rem;
+    height: 1.4rem;
+    vertical-align: middle;
+}
+
+.color-swatch {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 2px solid #ddd;
+    border-radius: 50%;
+}
+
+input.color-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.color-field:has(input:enabled):hover .color-swatch,
+.color-field:has(input:focus-visible) .color-swatch {
+    border-color: #9147ff;
+}
+
+/* Une entrée exclue n'a pas de couleur : on grise le disque plutôt que de
+   retirer le contrôle, pour que les colonnes restent alignées. */
+.color-field:has(input:disabled) .color-swatch {
+    opacity: 0.25;
+}
+
+.color-field:has(input:disabled) {
+    cursor: not-allowed;
+}
+
+/* Le panneau de Coloris est en thème sombre, mais sur son propre gris : on
+   l'aligne sur les fonds du popup. Sa feuille est chargée après celle-ci —
+   c'est voulu, voir popup.html —, donc ces retouches passent par l'id du
+   panneau pour l'emporter. */
+#clr-picker.clr-dark {
+    background-color: #1e1f21;
+}
+
+#clr-picker.clr-dark input.clr-color {
+    border-color: #36393f;
+    background-color: #131516;
+}
+
+#clr-picker.clr-dark input.clr-color:focus {
+    border-color: #9147ff;
 }
 
 .add-username-container {

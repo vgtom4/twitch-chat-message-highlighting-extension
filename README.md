@@ -18,11 +18,75 @@ Android, les premières à connaître cette déclaration.
 
 `npx web-ext lint` valide le paquet côté Firefox ; il passe sans avertissement.
 
-Les deux navigateurs n'exposent pas les promesses au même endroit : sous
-Firefox, `chrome.*` reste en callbacks et seul `browser.*` renvoie des
-promesses. Chaque script commence donc par
-`const chrome = globalThis.browser ?? globalThis.chrome;` — le reste du code
-reste écrit en `await`, à l'identique.
+### `chrome` ou `browser`
+
+Les deux navigateurs n'exposent pas les promesses au même endroit, et tout ce
+code est écrit en `await` :
+
+| | `chrome.*` | `browser.*` |
+| --- | --- | --- |
+| Firefox | callbacks, renvoie `undefined` | promesses ✔ |
+| Chrome | promesses ✔ (MV3) | **existe, mais alias incomplet** — pas de `storage` |
+
+Choisir `browser` sur sa simple présence casse donc Chrome, et choisir `chrome`
+casse Firefox. Le namespace est retenu une fois dans [shared.js](shared.js), sur
+la présence de la méthode dont on se sert, et exposé par `TCH.api` — que le
+content script et le popup reprennent :
+
+```js
+const api = globalThis.browser?.storage?.sync?.set ? globalThis.browser : globalThis.chrome;
+```
+
+Il n'y a donc plus aucun `chrome.` ni `browser.` ailleurs dans le code : tout
+passe par `api.`.
+
+### Choix d'une couleur
+
+Firefox ouvre le sélecteur d'un `input[type="color"]` dans une fenêtre
+**extérieure** au popup : celui-ci perd le focus, le navigateur le ferme, son
+document est détruit — l'événement `change` n'arrive jamais et la couleur choisie
+est perdue. Chrome, lui, garde son popup ouvert pendant que le picker est
+affiché. Il n'y a donc plus aucun `input[type="color"]` dans l'extension.
+
+À la place, [Coloris](vendor/coloris/README.md) — vendoré, MIT, sans dépendance
+— dessine son panneau **dans** le document du popup : rien ne peut le fermer, et
+les deux navigateurs suivent le même chemin.
+
+Le contrôle est le même partout (`colorControl` dans [popup.js](popup/popup.js)),
+dans les deux tables comme dans le panneau de réglages :
+
+| Élément | Rôle |
+| ------- | ---- |
+| `<span class="color-swatch">` | le disque, seul élément visible : il porte la couleur |
+| `<input class="color-input" data-coloris>` | transparent, posé sur le disque ; reçoit le clic, porte la valeur, émet les événements |
+
+Coloris est initialisé une fois avec un **sélecteur en chaîne**
+(`el: "[data-coloris]"`), ce qui lui fait déléguer l'écoute au document : les
+champs des lignes redessinées ensuite fonctionnent sans réinitialisation.
+`wrap: false`, puisque le disque est notre élément et non sa vignette.
+
+- `input` suit le glissement dans le dégradé : le disque se met à jour en direct.
+- `change` n'arrive qu'à la fermeture du panneau, et seulement si la couleur a
+  changé : **c'est là seulement qu'on écrit dans le storage**, pas à chaque pixel
+  parcouru.
+- Une règle en mode `black` n'a pas de couleur : son champ est désactivé **et
+  privé de l'attribut `data-coloris`**, donc Coloris ne le voit pas. Le disque
+  est grisé, la colonne reste alignée.
+- `render()` appelle `Coloris.close()` : les lignes sont reconstruites, donc le
+  champ auquel le panneau est ancré va être détaché. Fermer émet au besoin le
+  `change` en attente, la couleur en cours de choix n'est pas perdue.
+
+Les raccourcis proposés sous le dégradé sont la couleur par défaut et
+`AUTO_COLORS` — celles qu'on retrouve déjà dans les règles.
+
+`coloris.css` est chargé **après** `popup.css`, volontairement : à spécificité
+égale, ses règles doivent l'emporter, sinon les styles génériques de `button` et
+`input[type="text"]` de ce popup déforment son panneau. Les retouches de fond
+sombre passent donc par `#clr-picker`, pour repasser devant.
+
+`web-ext lint` signale six avertissements `UNSAFE_VAR_ASSIGNMENT` dans
+`vendor/coloris/coloris.js` : la lib construit son panneau avec `innerHTML`, à
+partir de ses propres chaînes. Ce sont des avertissements, pas des erreurs.
 
 ## Architecture (v2)
 
@@ -32,6 +96,7 @@ reste écrit en `await`, à l'identique.
 | `content.js` | Observe le chat, résout les badges, applique les highlights, gère le bouton de survol. |
 | `styles.css` | Une règle de highlight + le style du bouton. Aucune génération dynamique. |
 | `popup/`     | Réglages. N'écrit que dans `chrome.storage`.                 |
+| `vendor/`    | Code tiers copié tel quel, une seule entrée : [Coloris](vendor/coloris/README.md), le sélecteur de couleur du popup. |
 
 Il n'y a **pas de service worker** : le popup écrit dans le storage, les onglets
 réagissent via `chrome.storage.onChanged`.
