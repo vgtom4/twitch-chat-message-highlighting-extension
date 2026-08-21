@@ -6,6 +6,11 @@
 globalThis.TCH = (() => {
     "use strict";
 
+    // Firefox n'expose les promesses que sur `browser` : sur `chrome`, les
+    // mêmes méthodes n'attendent qu'un callback et renvoient `undefined`. Tout
+    // le code étant écrit en `await`, on prend `browser` quand il existe.
+    const chrome = globalThis.browser ?? globalThis.chrome;
+
     const VERSION = 7;
 
     // Un badge comme un utilisateur peut être ignoré, colorer la ligne, ou au

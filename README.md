@@ -1,7 +1,28 @@
 # Twitch Chat Messages Highlighting
 
-Extension Chrome qui colore les messages du chat Twitch (live et VOD) selon
-l'utilisateur ou le badge qu'il porte.
+Extension Chrome et Firefox qui colore les messages du chat Twitch (live et VOD)
+selon l'utilisateur ou le badge qu'il porte.
+
+## Installation en développement
+
+- **Chrome** : `chrome://extensions` → « Charger l'extension non empaquetée » →
+  le dossier du dépôt.
+- **Firefox** : `about:debugging#/runtime/this-firefox` → « Charger un module
+  temporaire » → le fichier `manifest.json`.
+
+Le même manifeste sert aux deux : MV3, sans service worker.
+`browser_specific_settings.gecko` donne l'identifiant que Firefox exige pour
+autoriser `storage.sync`, la déclaration `data_collection_permissions` (`none` :
+rien ne sort de la machine) et les versions minimales — 140 sur desktop, 142 sur
+Android, les premières à connaître cette déclaration.
+
+`npx web-ext lint` valide le paquet côté Firefox ; il passe sans avertissement.
+
+Les deux navigateurs n'exposent pas les promesses au même endroit : sous
+Firefox, `chrome.*` reste en callbacks et seul `browser.*` renvoie des
+promesses. Chaque script commence donc par
+`const chrome = globalThis.browser ?? globalThis.chrome;` — le reste du code
+reste écrit en `await`, à l'identique.
 
 ## Architecture (v2)
 

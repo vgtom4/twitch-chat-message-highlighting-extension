@@ -8,6 +8,9 @@
 (() => {
     "use strict";
 
+    // Voir shared.js : `browser` d'abord, pour les promesses sous Firefox.
+    const chrome = globalThis.browser ?? globalThis.chrome;
+
     const LINE_SELECTOR = ".chat-line__message, .vod-message";
     const BADGE_IMG_SELECTOR = 'img[src*="/badges/v1/"]';
     const HIGHLIGHT_ATTR = "data-tch-highlight";

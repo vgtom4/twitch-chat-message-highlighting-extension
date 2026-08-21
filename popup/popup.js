@@ -4,6 +4,9 @@
 (() => {
     "use strict";
 
+    // Voir shared.js : `browser` d'abord, pour les promesses sous Firefox.
+    const chrome = globalThis.browser ?? globalThis.chrome;
+
     const els = {
         enabledToggle: document.getElementById("enabledToggle"),
         settingsButton: document.getElementById("settingsButton"),
