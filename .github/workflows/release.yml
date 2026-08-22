@@ -19,21 +19,30 @@ jobs:
       - name: Checkout du code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Récupère l'historique pour lire les commits correctement
+          fetch-depth: 0
 
       - name: Configuration de Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      # 1. Analyse du commit et calcul de la nouvelle version
-      - name: Incrémentation de la version
+      # 1. Gestion de la version (Bump si Push, Réutilisation si Manuel)
+      - name: Calcul de la version
         id: bump_version
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
           CURRENT_VER=$(jq -r '.version' manifest.json)
+          EVENT_NAME="${{ github.event_name }}"
           
-          # Si la version n'est pas au format SemVer (ex: "1"), on la normalise en "1.0.0"
+          # Si c'est un lancement manuel : on conserve la version du manifest et on force la réédition de la release
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Déclenchement manuel : recréation de la release v$CURRENT_VER"
+            echo "NEW_VERSION=$CURRENT_VER" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Si c'est un push : analyse du message de commit
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+
           if [[ ! "$CURRENT_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             CURRENT_VER="${CURRENT_VER}.0.0"
           fi
@@ -61,8 +70,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git commit -am "chore(release): bump version to v$NEW_VER [skip ci]"
-          git tag "v$NEW_VER"
-          git push origin main --tags
+          git tag -f "v$NEW_VER"
+          
+          git push origin ${{ github.ref_name }} --tags
 
       # 2. Signature Firefox (.xpi)
       - name: Signature Firefox avec web-ext
@@ -86,12 +96,13 @@ jobs:
             --artifacts-dir=web-ext-artifacts/chrome-build \
             --filename="${{ env.EXTENSION_BASENAME }}-v${{ steps.bump_version.outputs.NEW_VERSION }}.zip"
 
-      # 4. Publication de la Release GitHub
+      # 4. Publication/Écrasement de la Release GitHub
       - name: Publication de la Release GitHub
         if: steps.bump_version.outputs.SKIP != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ steps.bump_version.outputs.NEW_VERSION }}"
+          overwrite: true # Écrase les anciens fichiers joints s'ils existent déjà
           files: |
             web-ext-artifacts/${{ env.EXTENSION_BASENAME }}-v${{ steps.bump_version.outputs.NEW_VERSION }}.xpi
             web-ext-artifacts/chrome-build/${{ env.EXTENSION_BASENAME }}-v${{ steps.bump_version.outputs.NEW_VERSION }}.zip
