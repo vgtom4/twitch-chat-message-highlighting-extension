@@ -3,12 +3,55 @@
 Extension Chrome et Firefox qui colore les messages du chat Twitch (live et VOD)
 selon l'utilisateur ou le badge qu'il porte.
 
-## Installation en développement
+## Installation
+
+Chaque version est publiée en [release GitHub][releases], avec deux fichiers :
+
+| Fichier | Navigateur | Installation |
+| ------- | ---------- | ------------ |
+| `twitch-chat-highlighter-vX.Y.Z.xpi` | Firefox | ouvrir le fichier dans Firefox, ou `about:addons` → engrenage → « Installer un module depuis un fichier » |
+| `twitch-chat-highlighter-vX.Y.Z.zip` | Chrome | décompresser, puis `chrome://extensions` → mode développeur → « Charger l'extension non empaquetée » → le dossier obtenu |
+
+Le `.xpi` est **signé par Mozilla** (canal `unlisted`, donc hors AMO) : il
+s'installe et se met à jour comme n'importe quel module, il survit au
+redémarrage, et `storage.sync` fonctionne — plus rien à voir avec le chargement
+d'un module temporaire, qui restait cantonné à la session.
+
+Le `.zip` Chrome, lui, n'est pas signé : sans passage par le Chrome Web Store, il
+n'y a pas de `.crx` installable, donc le chargement non empaqueté reste la seule
+voie. L'extension persiste bien entre les sessions, mais Chrome rappelle à chaque
+démarrage qu'une extension en mode développeur est active.
+
+[releases]: https://github.com/vgtom4/twitch-chat-message-highlighting-extension/releases
+
+### En développement
+
+Depuis une copie du dépôt, sans rien construire :
 
 - **Chrome** : `chrome://extensions` → « Charger l'extension non empaquetée » →
   le dossier du dépôt.
 - **Firefox** : `about:debugging#/runtime/this-firefox` → « Charger un module
-  temporaire » → le fichier `manifest.json`.
+  temporaire » → le fichier `manifest.json`. C'est le seul cas où l'extension
+  disparaît à la fermeture du navigateur : pour un usage courant, prendre le
+  `.xpi` de la release.
+
+### Publication
+
+[.github/workflows/release.yml](.github/workflows/release.yml), sur un push vers
+`latest` :
+
+1. la version de `manifest.json` est incrémentée d'après le préfixe du dernier
+   commit — `feat:`/`refactor:` sur le mineur, `fix:` sur le patch, rien sinon
+   (le workflow s'arrête là) — puis commitée et taguée ;
+2. `web-ext sign` produit le `.xpi` signé (secrets `WEB_EXT_API_KEY` /
+   `WEB_EXT_API_SECRET`) ;
+3. `web-ext build` produit le `.zip` Chrome ;
+4. les deux sont joints à la release `vX.Y.Z`.
+
+Un `workflow_dispatch` manuel rejoue les étapes 2 à 4 sur la version courante du
+manifeste, sans l'incrémenter : c'est de quoi reconstruire une release existante.
+
+## Un manifeste pour deux navigateurs
 
 Le même manifeste sert aux deux : MV3, sans service worker.
 `browser_specific_settings.gecko` donne l'identifiant que Firefox exige pour
