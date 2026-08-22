@@ -3,7 +3,7 @@ name: Auto Version and Release Extension
 on:
   push:
     branches:
-      - main
+      - latest
   workflow_dispatch:
 
 env:
