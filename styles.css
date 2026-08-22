@@ -13,7 +13,7 @@
 [data-tch-filter="highlighted"] .vod-message:not([data-tch-highlight]),
 [data-tch-filter="known"] .chat-line__message:not([data-tch-highlight]):not([data-tch-keep]),
 [data-tch-filter="known"] .vod-message:not([data-tch-highlight]):not([data-tch-keep]) {
-    display: none;
+    display: none !important;
 }
 
 /* Ancrage du bouton d'action, posé uniquement sur la ligne survolée. */
