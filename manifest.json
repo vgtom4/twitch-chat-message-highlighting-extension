@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twitch Chat Messages Highlighting",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Highlight users messages on Twitch.",
   "icons": {
     "16": "public/favicons/icon16.png",
@@ -15,8 +15,13 @@
         "https://m.twitch.tv/*",
         "https://dashboard.twitch.tv/*"
       ],
-      "js": ["shared.js", "content.js"],
-      "css": ["styles.css"],
+      "js": [
+        "shared.js",
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -32,7 +37,9 @@
       "id": "twitch-chat-highlighter@vgtom4",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     },
     "gecko_android": {
