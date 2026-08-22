@@ -1,0 +1,54 @@
+name: Sign and Release Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Déclaration de la variable réutilisable
+env:
+  EXTENSION_FILENAME: "twitch-chat-highlighter"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Configuration de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 1. Signature Firefox (.xpi)
+      - name: Signature Firefox avec web-ext
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: |
+          npx web-ext sign \
+            --channel=unlisted \
+            --api-key="$WEB_EXT_API_KEY" \
+            --api-secret="$WEB_EXT_API_SECRET" \
+            --filename="${{ env.EXTENSION_FILENAME }}.xpi"
+
+      # 2. Build ZIP Chrome (.zip)
+      - name: Création du ZIP Chrome
+        run: |
+          npx web-ext build \
+            --artifacts-dir=web-ext-artifacts/chrome-build \
+            --filename="${{ env.EXTENSION_FILENAME }}.zip"
+
+      # 3. Publication sur la Release GitHub
+      - name: Publication de la Release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            web-ext-artifacts/${{ env.EXTENSION_FILENAME }}.xpi
+            web-ext-artifacts/chrome-build/${{ env.EXTENSION_FILENAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
