@@ -1,2 +1,27 @@
-*.zip
+# Artefacts générés par web-ext (les .xpi et zips signés)
 web-ext-artifacts/
+*.zip
+.amo-upload-uuid
+
+# Dépendances Node.js (si tu utilises npm/yarn/pnpm)
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Fichiers de clés ou variables d'environnement locales
+.env
+.env.local
+*.pem
+*.key
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Fichiers système et éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
