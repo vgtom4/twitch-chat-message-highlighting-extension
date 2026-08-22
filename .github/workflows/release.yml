@@ -1,6 +1,7 @@
 name: Sign and Release Extension
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
