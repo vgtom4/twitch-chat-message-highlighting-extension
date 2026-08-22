@@ -1,17 +1,16 @@
-name: Sign and Release Extension
+name: Auto Version and Release Extension
 
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
 
-# Déclaration de la variable réutilisable
 env:
-  EXTENSION_FILENAME: "twitch-chat-highlighter"
+  EXTENSION_BASENAME: "twitch-chat-highlighter"
 
 jobs:
-  build-and-release:
+  version-and-release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -19,14 +18,55 @@ jobs:
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Récupère l'historique pour lire les commits correctement
 
       - name: Configuration de Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      # 1. Signature Firefox (.xpi)
+      # 1. Analyse du commit et calcul de la nouvelle version
+      - name: Incrémentation de la version
+        id: bump_version
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          CURRENT_VER=$(jq -r '.version' manifest.json)
+          
+          # Si la version n'est pas au format SemVer (ex: "1"), on la normalise en "1.0.0"
+          if [[ ! "$CURRENT_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            CURRENT_VER="${CURRENT_VER}.0.0"
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VER"
+
+          if [[ $COMMIT_MSG =~ ^feat:|^refactor: ]]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          elif [[ $COMMIT_MSG =~ ^fix: ]]; then
+            PATCH=$((PATCH + 1))
+          else
+            echo "Aucun préfixe feat:, refactor: ou fix: détecté. Pas de nouveau release."
+            echo "SKIP=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          NEW_VER="${MAJOR}.${MINOR}.${PATCH}"
+          echo "NEW_VERSION=$NEW_VER" >> $GITHUB_OUTPUT
+
+          # Mise à jour de manifest.json
+          jq --arg ver "$NEW_VER" '.version = $ver' manifest.json > manifest.tmp.json && mv manifest.tmp.json manifest.json
+
+          # Configuration Git pour commiter le changement
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): bump version to v$NEW_VER [skip ci]"
+          git tag "v$NEW_VER"
+          git push origin main --tags
+
+      # 2. Signature Firefox (.xpi)
       - name: Signature Firefox avec web-ext
+        if: steps.bump_version.outputs.SKIP != 'true'
         env:
           WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
           WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
@@ -34,22 +74,26 @@ jobs:
           npx web-ext sign \
             --channel=unlisted \
             --api-key="$WEB_EXT_API_KEY" \
-            --api-secret="$WEB_EXT_API_SECRET" \
-            --filename="${{ env.EXTENSION_FILENAME }}.xpi"
+            --api-secret="$WEB_EXT_API_SECRET"
+          
+          mv web-ext-artifacts/*.xpi web-ext-artifacts/${{ env.EXTENSION_BASENAME }}-v${{ steps.bump_version.outputs.NEW_VERSION }}.xpi
 
-      # 2. Build ZIP Chrome (.zip)
+      # 3. Build ZIP Chrome (.zip)
       - name: Création du ZIP Chrome
+        if: steps.bump_version.outputs.SKIP != 'true'
         run: |
           npx web-ext build \
             --artifacts-dir=web-ext-artifacts/chrome-build \
-            --filename="${{ env.EXTENSION_FILENAME }}.zip"
+            --filename="${{ env.EXTENSION_BASENAME }}-v${{ steps.bump_version.outputs.NEW_VERSION }}.zip"
 
-      # 3. Publication sur la Release GitHub
+      # 4. Publication de la Release GitHub
       - name: Publication de la Release GitHub
+        if: steps.bump_version.outputs.SKIP != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: "v${{ steps.bump_version.outputs.NEW_VERSION }}"
           files: |
-            web-ext-artifacts/${{ env.EXTENSION_FILENAME }}.xpi
-            web-ext-artifacts/chrome-build/${{ env.EXTENSION_FILENAME }}.zip
+            web-ext-artifacts/${{ env.EXTENSION_BASENAME }}-v${{ steps.bump_version.outputs.NEW_VERSION }}.xpi
+            web-ext-artifacts/chrome-build/${{ env.EXTENSION_BASENAME }}-v${{ steps.bump_version.outputs.NEW_VERSION }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
